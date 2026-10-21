@@ -19,9 +19,13 @@ import { fakeConnector, fakeFetch, flush, json } from "../test-utils";
 import { Agents } from "./agents";
 import { Alerts } from "./alerts";
 import { AutoRotate, HOLD_MS } from "./auto-rotate";
+import { Dim } from "./dim";
 import { GoToPage } from "./go-to-page";
+import { Island, savedIsland } from "./island";
+import { MuteAlerts } from "./mute-alerts";
 import { PageCycler, ROTATE_THROTTLE_MS } from "./page-cycler";
 import { PauseRotation } from "./pause-rotation";
+import { ReloadKiosk } from "./reload-kiosk";
 import { SensorDial } from "./sensor-dial";
 import { REPAINT_MS, SensorValue } from "./sensor-value";
 import { NextPage, PrevPage } from "./step-page";
@@ -61,6 +65,7 @@ const control = (patch: Partial<ControlState> = {}): ControlState => ({
 		solo: { page: "s1", rotating: false, override: null },
 	},
 	alerts: [],
+	mutedUntil: null,
 	...patch,
 });
 
@@ -70,6 +75,7 @@ async function onlineDeps(state: ControlState = control()) {
 	let reply: Response | (() => Response) = json(state);
 	let failing = false;
 	let alertsAfter: ActiveAlert[] = state.alerts;
+	let mutedAfter: number | null | undefined;
 	const f = fakeFetch({
 		"/api/config": () => json({ ...config, alerts: { enabled: true, rules: config.alertRules } }), // the Studio nests the rules
 		"/api/control": () => json(state),
@@ -77,9 +83,10 @@ async function onlineDeps(state: ControlState = control()) {
 		"/api/control/profile": (init) => record("profile", init),
 		"/api/control/rotate": (init) => record("rotate", init),
 		"/api/control/touch": (init) => record("touch", init),
+		"/api/control/kiosk": (init) => record("kiosk", init),
 		"/api/control/alert": (init) => {
 			posts.push({ path: "alert", body: JSON.parse(String(init?.body)) });
-			return failing ? new Response("bad", { status: 400 }) : json({ alerts: alertsAfter });
+			return failing ? new Response("bad", { status: 400 }) : json({ alerts: alertsAfter, ...(mutedAfter === undefined ? {} : { mutedUntil: mutedAfter }) });
 		},
 	});
 	function record(path: string, init?: RequestInit) {
@@ -108,6 +115,8 @@ async function onlineDeps(state: ControlState = control()) {
 		},
 		/** What the server answers to the next alert post. */
 		setAlertsAfter: (alerts: ActiveAlert[]) => (alertsAfter = alerts),
+		/** The mutedUntil the server answers to the next alert post. */
+		setMutedAfter: (until: number | null) => (mutedAfter = until),
 		extras,
 		studio,
 		dataApi,
@@ -1079,5 +1088,388 @@ describe("sensor dial", () => {
 		expect(streamDeck.ui.sendToPropertyInspector).toHaveBeenLastCalledWith({ event: "getPages", items: [{ label: "Only", value: "s1" }] });
 		await dial.onSendToPlugin({ action: a, payload: { event: "getProfiles" } } as never);
 		expect(vi.mocked(streamDeck.ui.sendToPropertyInspector).mock.calls.at(-1)![0]).toMatchObject({ event: "getProfiles" });
+	});
+});
+
+const kioskState = (main: Partial<ControlState["profiles"][string]> = {}, patch: Partial<ControlState> = {}) =>
+	control({ profiles: { main: { page: "p1", rotating: false, override: null, ...main }, solo: { page: "s1", rotating: false, override: null } }, ...patch });
+
+describe("mute alerts key", () => {
+	const T0 = 1_000_000;
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(T0);
+	});
+	afterEach(() => vi.useRealTimers());
+
+	const image = (a: ReturnType<typeof keyAction>, n = -1) => decode(a.setImage.mock.calls.at(n)!);
+
+	it("shows the mute length on a card while alerts are not muted", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new MuteAlerts(t.deps));
+		expect(image(a)).toContain(">Mute 30 min</text>");
+		expect(image(a)).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		const b = keyAction("k2");
+		appear({ action: b, settings: { minutes: "45" } }, new MuteAlerts(t.deps));
+		expect(image(b)).toContain(">Mute 45 min</text>");
+		const c = keyAction("k3");
+		appear({ action: c, settings: { minutes: 99999 } }, new MuteAlerts(t.deps));
+		expect(image(c)).toContain(">Mute 1440 min</text>");
+		const d = keyAction("k4");
+		appear({ action: d, settings: { minutes: 0 } }, new MuteAlerts(t.deps));
+		expect(image(d)).toContain(">Mute 1 min</text>");
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("is filled with the minutes left, rounded up, and hours and minutes from an hour", async () => {
+		const t = await onlineDeps(control({ mutedUntil: T0 + 125_000 }));
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new MuteAlerts(t.deps));
+		expect(image(a)).toContain(">Muted 3m</text>");
+		expect(image(a)).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+		t.studio.control = control({ mutedUntil: T0 + 135 * 60_000 });
+		const b = keyAction("k2");
+		appear({ action: b, settings: {} }, new MuteAlerts(t.deps));
+		expect(image(b)).toContain(">Muted 2h 15m</text>");
+	});
+
+	it("shows the offline face without a timer while the studio cannot be reached", async () => {
+		const t = await onlineDeps(control({ mutedUntil: T0 + 125_000 }));
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new MuteAlerts(t.deps));
+		expect(image(a)).toContain(">Offline</text>");
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("ticks the remaining time down on every whole-minute boundary and stops when the mute ends", async () => {
+		const t = await onlineDeps(control({ mutedUntil: T0 + 125_000 }));
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new MuteAlerts(t.deps));
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(4_999);
+		expect(a.setImage).toHaveBeenCalledTimes(1);
+		vi.advanceTimersByTime(1);
+		expect(image(a)).toContain(">Muted 2m</text>");
+		vi.advanceTimersByTime(59_999);
+		expect(a.setImage).toHaveBeenCalledTimes(2);
+		vi.advanceTimersByTime(1);
+		expect(image(a)).toContain(">Muted 1m</text>");
+		vi.advanceTimersByTime(60_000);
+		expect(image(a)).toContain(">Mute 30 min</text>");
+		expect(a.setImage).toHaveBeenCalledTimes(4);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("repaints exactly on a minute when the time left is a whole number of minutes", async () => {
+		const t = await onlineDeps(control({ mutedUntil: T0 + 120_000 }));
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new MuteAlerts(t.deps));
+		expect(image(a)).toContain(">Muted 2m</text>");
+		vi.advanceTimersByTime(60_000);
+		expect(image(a)).toContain(">Muted 1m</text>");
+	});
+
+	it("arms the timer when a control change mutes and clears it when the mute is lifted", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new MuteAlerts(t.deps));
+		expect(vi.getTimerCount()).toBe(0);
+		const stream = t.connector.find("/events/control")!;
+		stream.options.onMessage(JSON.stringify({ ...control(), mutedUntil: T0 + 90_000 }));
+		expect(image(a)).toContain(">Muted 2m</text>");
+		expect(vi.getTimerCount()).toBe(1);
+		stream.options.onMessage(JSON.stringify({ ...control(), mutedUntil: null }));
+		expect(image(a)).toContain(">Mute 30 min</text>");
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("keeps one timer for several keys and clears it when the last one disappears", async () => {
+		const t = await onlineDeps(control({ mutedUntil: T0 + 125_000 }));
+		t.goOnline();
+		const key = new MuteAlerts(t.deps);
+		const a = keyAction();
+		const b = keyAction("k2");
+		appear({ action: a, settings: {} }, key);
+		appear({ action: b, settings: {} }, key);
+		expect(vi.getTimerCount()).toBe(1);
+		key.onWillDisappear({ action: a } as never);
+		expect(vi.getTimerCount()).toBe(1);
+		key.onWillDisappear({ action: b } as never);
+		expect(vi.getTimerCount()).toBe(0);
+		vi.advanceTimersByTime(300_000);
+		expect(a.setImage).toHaveBeenCalledTimes(1);
+		expect(b.setImage).toHaveBeenCalledTimes(1);
+	});
+
+	it("mutes for the configured minutes, and unmutes with 0 while muted", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new MuteAlerts(t.deps);
+		const a = keyAction();
+		const press = (settings: object) => key.onKeyDown({ action: a, payload: { settings } } as never);
+		await press({});
+		await press({ minutes: "10" });
+		t.setMutedAfter(T0 + 600_000);
+		await press({ minutes: 10 });
+		expect(t.studio.control?.mutedUntil).toBe(T0 + 600_000);
+		await press({ minutes: 10 }); // muted now: unmute
+		t.setMutedAfter(null);
+		await press({}); // still muted when sent; the reply lifts it
+		expect(t.studio.control?.mutedUntil).toBeNull();
+		await press({});
+		expect(t.posts.map((p) => p.body)).toEqual([
+			{ action: "mute", minutes: 30 },
+			{ action: "mute", minutes: 10 },
+			{ action: "mute", minutes: 10 },
+			{ action: "mute", minutes: 0 },
+			{ action: "mute", minutes: 0 },
+			{ action: "mute", minutes: 30 },
+		]);
+		expect(a.showOk).not.toHaveBeenCalled();
+		expect(a.showAlert).not.toHaveBeenCalled();
+	});
+
+	it("alerts when offline without posting, and when the server refuses", async () => {
+		const t = await onlineDeps();
+		const key = new MuteAlerts(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		expect(t.posts).toEqual([]);
+		t.goOnline();
+		t.failPosts();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+
+	it("answers the inspector's profile request", async () => {
+		const t = await onlineDeps();
+		await new MuteAlerts(t.deps).onSendToPlugin({ action: keyAction(), payload: { event: "getProfiles" } } as never);
+		expect(vi.mocked(streamDeck.ui.sendToPropertyInspector).mock.calls.at(-1)![0]).toMatchObject({ event: "getProfiles" });
+	});
+});
+
+describe("reload kiosk key", () => {
+	it("is a card captioned with the profile, or All kiosks without one", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new ReloadKiosk(t.deps));
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(">All kiosks</text>");
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		const b = keyAction("k2");
+		appear({ action: b, settings: { profile: "solo" } }, new ReloadKiosk(t.deps));
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(">Solo</text>");
+	});
+
+	it("leads the profile select with All kiosks", async () => {
+		const t = await onlineDeps();
+		await new ReloadKiosk(t.deps).onSendToPlugin({ action: keyAction(), payload: { event: "getProfiles" } } as never);
+		expect(vi.mocked(streamDeck.ui.sendToPropertyInspector).mock.calls.at(-1)![0]).toMatchObject({
+			event: "getProfiles",
+			items: [{ label: "All kiosks", value: "" }, { value: "main" }, { value: "solo" }],
+		});
+	});
+
+	it("posts the reload for the chosen profile or every kiosk and confirms with showOk", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new ReloadKiosk(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		await key.onKeyDown({ action: a, payload: { settings: { profile: "main" } } } as never);
+		expect(t.posts).toEqual([
+			{ path: "kiosk", body: { action: "reload" } },
+			{ path: "kiosk", body: { action: "reload", profile: "main" } },
+		]);
+		expect(a.showOk).toHaveBeenCalledTimes(2);
+		expect(a.showAlert).not.toHaveBeenCalled();
+	});
+
+	it("alerts when offline without posting, and when the server refuses", async () => {
+		const t = await onlineDeps();
+		const key = new ReloadKiosk(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		expect(t.posts).toEqual([]);
+		t.goOnline();
+		t.failPosts();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+});
+
+describe("dim key", () => {
+	it("is a sun on a card while the shown profile is not dimmed, also from a server without the field", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new Dim(t.deps));
+		const svg = decode(a.setImage.mock.calls[0]!);
+		expect(svg).toContain(">Dim</text>");
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		const b = await onlineDeps(kioskState({ dim: 0 }));
+		b.goOnline();
+		const k = keyAction();
+		appear({ action: k, settings: {} }, new Dim(b.deps));
+		expect(decode(k.setImage.mock.calls[0]!)).toContain(">Dim</text>");
+	});
+
+	it("is filled with a moon and the level while the resolved profile is dimmed", async () => {
+		const t = await onlineDeps(kioskState({ dim: 0.6 }));
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new Dim(t.deps));
+		const svg = decode(a.setImage.mock.calls[0]!);
+		expect(svg).toContain(">Dim 60%</text>");
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+		const b = keyAction("k2");
+		appear({ action: b, settings: { profile: "solo" } }, new Dim(t.deps)); // solo is not dimmed
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(">Dim</text>");
+	});
+
+	it("toggles with the level setting as 0.1..0.9, and leaves the level out when blank or unusable", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new Dim(t.deps);
+		const a = keyAction();
+		const press = (settings: object) => key.onKeyDown({ action: a, payload: { settings } } as never);
+		await press({ level: "50" });
+		await press({ level: 35, profile: "main" });
+		await press({ level: "5" });
+		await press({ level: "95" });
+		await press({ level: "" });
+		await press({ level: "abc" });
+		await press({});
+		expect(t.posts.map((p) => p.body)).toEqual([
+			{ action: "dim", state: "toggle", level: 0.5 },
+			{ action: "dim", profile: "main", state: "toggle", level: 0.35 },
+			{ action: "dim", state: "toggle", level: 0.1 },
+			{ action: "dim", state: "toggle", level: 0.9 },
+			{ action: "dim", state: "toggle" },
+			{ action: "dim", state: "toggle" },
+			{ action: "dim", state: "toggle" },
+		]);
+		expect(a.showAlert).not.toHaveBeenCalled();
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+
+	it("alerts when offline without posting, and when the server refuses", async () => {
+		const t = await onlineDeps();
+		const key = new Dim(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		expect(t.posts).toEqual([]);
+		t.goOnline();
+		t.failPosts();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("island key", () => {
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	const faceOf = async (state: ControlState, settings: object = {}) => {
+		const t = await onlineDeps(state);
+		t.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings }, new Island(t.deps));
+		return decode(a.setImage.mock.calls[0]!);
+	};
+
+	it("is a card reading hidden, also from a server without the field", async () => {
+		const svg = await faceOf(control());
+		expect(svg).toContain(">hidden</text>");
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(await faceOf(kioskState({ island: false, islandOverride: null }))).toContain(">hidden</text>");
+	});
+
+	it("is filled reading showing while the island is up", async () => {
+		const svg = await faceOf(kioskState({ island: true, islandOverride: null }));
+		expect(svg).toContain(">showing</text>");
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+	});
+
+	it("shows the profile's saved setting while it is overridden", async () => {
+		// The fixture profile has no island of its own, so its saved setting is off.
+		expect(await faceOf(kioskState({ island: true, islandOverride: "on" }))).toContain(">saved: off</text>");
+		expect(await faceOf(kioskState({ island: false, islandOverride: "off" }))).toContain(">saved: off</text>");
+		expect(await faceOf(kioskState({ island: false, islandOverride: "weird" as never }))).toContain(">hidden</text>");
+	});
+
+	it("reads the saved setting the way the studio does", () => {
+		const profile = { id: "p", name: "P", pages: [] };
+		expect(savedIsland(undefined)).toBe(false);
+		expect(savedIsland(profile)).toBe(false);
+		expect(savedIsland({ ...profile, island: {} })).toBe(true);
+		expect(savedIsland({ ...profile, island: { enabled: true } })).toBe(true);
+		expect(savedIsland({ ...profile, island: { enabled: false } })).toBe(false);
+	});
+
+	it("follows the profile of the settings", async () => {
+		const svg = await faceOf(kioskState({ island: true }), { profile: "solo" });
+		expect(svg).toContain(">hidden</text>");
+	});
+
+	it("toggles on a short press without a confirmation", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new Island(t.deps);
+		const a = keyAction();
+		key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		vi.advanceTimersByTime(HOLD_MS - 1);
+		await key.onKeyUp({ action: a, payload: { settings: {} } } as never);
+		expect(t.posts).toEqual([{ path: "kiosk", body: { action: "island", state: "toggle" } }]);
+		expect(a.showOk).not.toHaveBeenCalled();
+		expect(a.showAlert).not.toHaveBeenCalled();
+	});
+
+	it("restores the saved setting after a one second hold, confirming only when there was no override", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new Island(t.deps);
+		const a = keyAction();
+		key.onKeyDown({ action: a, payload: { settings: { profile: "main" } } } as never);
+		vi.advanceTimersByTime(HOLD_MS);
+		await key.onKeyUp({ action: a, payload: { settings: { profile: "main" } } } as never);
+		expect(t.posts).toEqual([{ path: "kiosk", body: { action: "island", profile: "main", state: "saved" } }]);
+		expect(a.showOk).toHaveBeenCalledTimes(1);
+
+		const o = await onlineDeps(kioskState({ island: true, islandOverride: "on" }));
+		o.goOnline();
+		const overridden = new Island(o.deps);
+		const b = keyAction("k2");
+		overridden.onKeyDown({ action: b, payload: { settings: {} } } as never);
+		vi.advanceTimersByTime(HOLD_MS);
+		await overridden.onKeyUp({ action: b, payload: { settings: {} } } as never);
+		expect(o.posts).toEqual([{ path: "kiosk", body: { action: "island", state: "saved" } }]);
+		expect(b.showOk).not.toHaveBeenCalled();
+		expect(b.showAlert).not.toHaveBeenCalled();
+	});
+
+	it("alerts when offline without posting, and when the server refuses", async () => {
+		const t = await onlineDeps();
+		const key = new Island(t.deps);
+		const a = keyAction();
+		await key.onKeyUp({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		expect(t.posts).toEqual([]);
+		t.goOnline();
+		t.failPosts();
+		await key.onKeyUp({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+		expect(a.showOk).not.toHaveBeenCalled();
 	});
 });

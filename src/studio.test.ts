@@ -29,6 +29,7 @@ const control: ControlState = {
 		strip: { page: "s1", rotating: true, override: "on" },
 	},
 	alerts: [],
+	mutedUntil: null,
 };
 
 function setup(routes: Record<string, () => Response> = {}) {
@@ -341,5 +342,93 @@ describe("touch", () => {
 		expect(JSON.parse(String(f.calls.at(-1)!.init?.body))).toEqual({});
 		expect(f.calls.at(-1)!.url).toBe("http://dash:3922/api/control/touch");
 		expect(client.control?.shown).toBe("main");
+	});
+});
+
+describe("mute and kiosk controls", () => {
+	const feed = (raw: unknown) => {
+		const { client, c } = setup();
+		client.start();
+		c.find("/events/control")!.options.onMessage(JSON.stringify(raw));
+		return client;
+	};
+
+	it("parses mutedUntil, and the per-profile kiosk fields when present", () => {
+		const client = feed({
+			...control,
+			mutedUntil: 1234,
+			profiles: { main: { page: "p1", rotating: false, override: null, dim: 0.6, island: true, islandOverride: "off", reload: 3 } },
+		});
+		expect(client.control?.mutedUntil).toBe(1234);
+		expect(client.control?.profiles.main).toMatchObject({ dim: 0.6, island: true, islandOverride: "off" });
+	});
+
+	it("takes a missing or malformed mutedUntil as not muted, and tolerates older servers without the kiosk fields", () => {
+		expect(feed({ profile: null, shown: null, profiles: {} }).control?.mutedUntil).toBeNull();
+		expect(feed({ ...control, mutedUntil: "soon" }).control?.mutedUntil).toBeNull();
+		expect(feed({ ...control, mutedUntil: Number.NaN }).control?.mutedUntil).toBeNull();
+		expect(feed({ ...control, mutedUntil: 99 }).control?.profiles.main?.dim).toBeUndefined();
+	});
+
+	it("posts mute minutes, 0 to unmute, and stores mutedUntil with the alerts from the reply", async () => {
+		const { client, f } = setup({ "/api/control/alert": () => json({ alerts: [], mutedUntil: 5000 }) });
+		client.control = control;
+		expect(await client.postMute(30)).toBe(true);
+		expect(JSON.parse(String(f.calls.at(-1)!.init?.body))).toEqual({ action: "mute", minutes: 30 });
+		expect(client.control?.mutedUntil).toBe(5000);
+		expect(control.mutedUntil).toBeNull(); // replaced immutably
+		const off = setup({ "/api/control/alert": () => json({ alerts: [], mutedUntil: null }) });
+		off.client.control = { ...control, mutedUntil: 5000 };
+		expect(await off.client.postMute(0)).toBe(true);
+		expect(JSON.parse(String(off.f.calls.at(-1)!.init?.body))).toEqual({ action: "mute", minutes: 0 });
+		expect(off.client.control?.mutedUntil).toBeNull();
+	});
+
+	it("keeps the stored mutedUntil when the alert reply does not carry one", async () => {
+		const { client } = setup({ "/api/control/alert": () => json({ alerts: [] }) });
+		client.control = { ...control, mutedUntil: 5000 };
+		await client.postAlert({ id: "a1", action: "ack" });
+		expect(client.control?.mutedUntil).toBe(5000);
+	});
+
+	it("posts kiosk bodies, leaving out profile and level when undefined", async () => {
+		const { client, f } = setup({ "/api/control/kiosk": () => json(control) });
+		const last = () => JSON.parse(String(f.calls.at(-1)!.init?.body));
+		expect(await client.postReload(undefined)).toEqual(control);
+		expect(f.calls.at(-1)!.url).toBe("http://dash:3922/api/control/kiosk");
+		expect(f.calls.at(-1)!.init?.headers).toEqual({ "Content-Type": "application/json", "X-Dashboard-Control": "1" });
+		expect(last()).toEqual({ action: "reload" });
+		await client.postReload("main");
+		expect(last()).toEqual({ action: "reload", profile: "main" });
+		await client.postDim(undefined, "toggle");
+		expect(last()).toEqual({ action: "dim", state: "toggle" });
+		await client.postDim("main", "on", 0.4);
+		expect(last()).toEqual({ action: "dim", profile: "main", state: "on", level: 0.4 });
+		await client.postIsland(undefined, "toggle");
+		expect(last()).toEqual({ action: "island", state: "toggle" });
+		await client.postIsland("main", "saved");
+		expect(last()).toEqual({ action: "island", profile: "main", state: "saved" });
+		await client.postKiosk({ action: "reload" });
+		expect(last()).toEqual({ action: "reload" });
+	});
+
+	it("returns null for a refused kiosk post", async () => {
+		const { client } = setup({ "/api/control/kiosk": () => new Response("bad", { status: 400 }) });
+		expect(await client.postReload(undefined)).toBeNull();
+	});
+
+	it("reports the mute left, 0 when not muted or expired", () => {
+		const { client } = setup();
+		expect(client.mutedFor(1000)).toBe(0); // no state yet
+		client.control = control;
+		expect(client.mutedFor(1000)).toBe(0);
+		client.control = { ...control, mutedUntil: 5000 };
+		expect(client.mutedFor(1000)).toBe(4000);
+		expect(client.mutedFor(5000)).toBe(0);
+		expect(client.mutedFor(9000)).toBe(0);
+		vi.useFakeTimers();
+		vi.setSystemTime(2000);
+		expect(client.mutedFor()).toBe(3000);
+		vi.useRealTimers();
 	});
 });
