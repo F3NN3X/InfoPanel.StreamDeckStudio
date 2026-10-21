@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { hslToHex, palette } from "./color";
 import { hasIcon, iconBody, svgDataUrl } from "./icons";
-import { navKey, offlineKey, pageKey, profileKey, rotateKey, rotateSubtitle } from "./keys";
+import { agentsKey, alertsKey, navKey, offlineKey, pageKey, pauseKey, profileKey, rotateKey, rotateSubtitle, testAlertKey } from "./keys";
 import { sensorKey } from "./sensor";
-import { cyclerFeedback, stepTarget } from "./strip";
+import { cyclerFeedback, sensorFeedback, stepTarget } from "./strip";
 import { escapeXml, fit, truncate, wrap } from "./text";
 
 const theme = { background: "240 10% 3.9%", primary: "200 80% 50%", "primary-foreground": "0 0% 100%", card: "0 0% 10%", foreground: "0 0% 98%" };
@@ -181,5 +181,123 @@ describe("sensor key", () => {
 		const waiting = sensorKey({ ...base, value: undefined, history: [4] });
 		expect(waiting).toContain("—");
 		expect(waiting).not.toContain("<path");
+	});
+});
+
+describe("sensor key bar", () => {
+	const base = { theme, label: "CPU", value: "50", unit: "%", severity: "normal", history: [1, 2, 3] } as const;
+
+	it("draws a track and a fill instead of the sparkline", () => {
+		const svg = sensorKey({ ...base, bar: 0.5 });
+		expect(svg).not.toContain("<path");
+		expect(svg).toContain(`width="112" height="12" rx="6" fill="${P.muted}"`);
+		expect(svg).toContain(`width="56" height="12" rx="6" fill="${P.primary}"`);
+		expect(sensorKey({ ...base, bar: 0.5, severity: "crit" })).toContain(`width="56" height="12" rx="6" fill="${P.destructive}"`);
+	});
+
+	it("draws only the track at zero and fills the track at one", () => {
+		expect(sensorKey({ ...base, bar: 0 })).not.toContain(`rx="6" fill="${P.primary}"`);
+		expect(sensorKey({ ...base, bar: 1 })).toContain(`width="112" height="12" rx="6" fill="${P.primary}"`);
+	});
+});
+
+describe("alerts key", () => {
+	it("is a card with a muted bell when nothing is active", () => {
+		const svg = alertsKey({ theme, count: 0 });
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(svg).toContain(">No alerts</text>");
+		expect(svg).toContain(`stroke="${P.mutedFg}"`);
+	});
+
+	it("fills by severity with readable text, the count and the newest name", () => {
+		const critical = alertsKey({ theme, count: 3, severity: "critical", name: "CPU too hot" });
+		expect(critical).toContain(`<rect width="144" height="144" fill="${P.destructive}"/>`);
+		expect(critical).toContain(">3</text>");
+		expect(critical).toContain(">CPU too hot</text>");
+		expect(critical).toContain('stroke="#fafafa"');
+		const warning = alertsKey({ theme, count: 1, severity: "warning", name: "Disk" });
+		expect(warning).toContain(`<rect width="144" height="144" fill="${P.warn}"/>`);
+		expect(warning).toContain('stroke="#18181b"');
+		const info = alertsKey({ theme, count: 1, severity: "info", name: "FYI" });
+		expect(info).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+		expect(info).toContain(`stroke="${P.primaryFg}"`);
+	});
+});
+
+describe("test alert key", () => {
+	it("tints the flask by the rule's severity and names the rule", () => {
+		const svg = testAlertKey({ theme, name: "CPU hot", severity: "critical" });
+		expect(svg).toContain(`stroke="${P.destructive}"`);
+		expect(svg).toContain(">CPU hot</text>");
+		expect(testAlertKey({ theme, name: "Disk", severity: "warning" })).toContain(`stroke="${P.warn}"`);
+	});
+
+	it("asks for a rule in the muted colour while none is picked", () => {
+		const svg = testAlertKey({ theme });
+		expect(svg).toContain(">Pick a rule</text>");
+		expect(svg).toContain(`fill="${P.mutedFg}"`);
+	});
+});
+
+describe("pause rotation key", () => {
+	it("is a card with the pause caption while rotating and muted otherwise", () => {
+		const on = pauseKey({ theme, rotating: true, seconds: 30 });
+		expect(on).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(on).toContain(">Pause 30 s</text>");
+		expect(pauseKey({ theme, rotating: true, seconds: 90 })).toContain(">Pause 90 s</text>");
+		expect(on).toContain(`stroke="${P.primary}"`);
+		const off = pauseKey({ theme, rotating: false, seconds: 30 });
+		expect(off).toContain(`<rect width="144" height="144" fill="${P.muted}"/>`);
+		expect(off).toContain(">Not rotating</text>");
+	});
+});
+
+describe("agents key", () => {
+	it("warns with the newest waiting project, and counts when several wait", () => {
+		const one = agentsKey({ theme, waiting: 1, working: 2, project: "infopanel" });
+		expect(one).toContain(`<rect width="144" height="144" fill="${P.warn}"/>`);
+		expect(one).toContain(">infopanel</text>");
+		expect(one).not.toContain("waiting</text>");
+		const many = agentsKey({ theme, waiting: 3, working: 0, project: "infopanel" });
+		expect(many).toContain(">3 waiting</text>");
+		expect(agentsKey({ theme, waiting: 1, working: 0 })).toContain(">Needs you</text>");
+	});
+
+	it("shows the working count on a card, else an idle muted face", () => {
+		const working = agentsKey({ theme, waiting: 0, working: 4 });
+		expect(working).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(working).toContain(">4</text>");
+		expect(working).toContain(">working</text>");
+		const idle = agentsKey({ theme, waiting: 0, working: 0 });
+		expect(idle).toContain(`<rect width="144" height="144" fill="${P.muted}"/>`);
+		expect(idle).toContain(">Idle</text>");
+	});
+});
+
+describe("sensor strip", () => {
+	const base = { theme, offline: false, label: "CPU Load", value: "91.4", unit: "%", severity: "normal", bar: 0.914 } as const;
+
+	it("shows label, value + unit and the bar percentage in the severity colour", () => {
+		expect(sensorFeedback(base)).toEqual({
+			label: { value: "CPU Load", color: P.mutedFg },
+			value: { value: "91.4 %", color: P.primary },
+			bar: { value: 91, bar_fill_c: P.primary },
+		});
+		expect(sensorFeedback({ ...base, severity: "warn" })).toMatchObject({ bar: { bar_fill_c: P.warn } });
+		expect(sensorFeedback({ ...base, severity: "crit" })).toMatchObject({ value: { color: P.destructive } });
+	});
+
+	it("draws an empty bar without a max and a dash without a reading", () => {
+		expect(sensorFeedback({ ...base, bar: undefined })).toMatchObject({ bar: { value: 0 } });
+		expect(sensorFeedback({ ...base, value: undefined, unit: undefined })).toMatchObject({ value: { value: "—", color: P.mutedFg } });
+		expect(sensorFeedback({ ...base, unit: undefined })).toMatchObject({ value: { value: "91.4" } });
+	});
+
+	it("goes muted when offline", () => {
+		expect(sensorFeedback({ ...base, offline: true })).toEqual({
+			label: { value: "Offline", color: P.mutedFg },
+			value: { value: "", color: P.mutedFg },
+			bar: { value: 0, bar_fill_c: P.muted },
+		});
 	});
 });

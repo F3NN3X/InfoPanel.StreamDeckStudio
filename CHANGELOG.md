@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+- **Alerts** key: count of the Studio's visible alerts, filled by the worst severity; press acknowledges the newest, hold dismisses it.
+- **Test alert** key: fires a chosen alert rule's test alert.
+- **Pause rotation** key: holds page rotation (Studio's touch) while the profile is rotating.
+- **Coding agents** key: shows whether Claude Code / Codex sessions are waiting for you or working, with an agent filter and an optional page to open.
+- **Sensor (dial)** action for Stream Deck +: label, value and bar on the touch strip.
+- Sensor value: new **Style** (sparkline or bar) and **Bar max** settings; the bar defaults to 0-100 for % and ° units.
+
 ## [0.2.0]
 
 Renamed to **InfoPanel Studio** to follow the app. Open `com.f3nn3x.infopanel-studio.streamDeckPlugin` to install.

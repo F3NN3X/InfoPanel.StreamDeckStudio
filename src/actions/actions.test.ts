@@ -10,22 +10,32 @@ vi.mock("@elgato/streamdeck", () => {
 });
 
 import streamDeck from "@elgato/streamdeck";
-import { StudioClient, type ControlState, type StudioConfig } from "../studio";
+import { StudioClient, type ActiveAlert, type ControlState, type StudioConfig } from "../studio";
+import { ExtrasClient, type AgentSession } from "../extras";
 import { DataApi } from "../data-api";
 import type { Deps } from "../runtime";
 import { palette } from "../render/color";
 import { fakeConnector, fakeFetch, flush, json } from "../test-utils";
+import { Agents } from "./agents";
+import { Alerts } from "./alerts";
 import { AutoRotate, HOLD_MS } from "./auto-rotate";
 import { GoToPage } from "./go-to-page";
 import { PageCycler, ROTATE_THROTTLE_MS } from "./page-cycler";
+import { PauseRotation } from "./pause-rotation";
+import { SensorDial } from "./sensor-dial";
 import { REPAINT_MS, SensorValue } from "./sensor-value";
 import { NextPage, PrevPage } from "./step-page";
 import { SwitchProfile } from "./switch-profile";
+import { TestAlert } from "./test-alert";
 
 const config: StudioConfig = {
 	version: 3,
 	activeProfile: "main",
 	theme: { primary: "200 80% 50%" },
+	alertRules: [
+		{ id: "r1", name: "CPU hot", severity: "critical" },
+		{ id: "r2", name: "Disk low", severity: "warning" },
+	],
 	profiles: [
 		{
 			id: "main",
@@ -50,6 +60,7 @@ const control = (patch: Partial<ControlState> = {}): ControlState => ({
 		main: { page: "p2", rotating: false, override: null },
 		solo: { page: "s1", rotating: false, override: null },
 	},
+	alerts: [],
 	...patch,
 });
 
@@ -57,12 +68,19 @@ const control = (patch: Partial<ControlState> = {}): ControlState => ({
 async function onlineDeps(state: ControlState = control()) {
 	const posts: { path: string; body: unknown }[] = [];
 	let reply: Response | (() => Response) = json(state);
+	let failing = false;
+	let alertsAfter: ActiveAlert[] = state.alerts;
 	const f = fakeFetch({
-		"/api/config": () => json(config),
+		"/api/config": () => json({ ...config, alerts: { enabled: true, rules: config.alertRules } }), // the Studio nests the rules
 		"/api/control": () => json(state),
 		"/api/control/page": (init) => record("page", init),
 		"/api/control/profile": (init) => record("profile", init),
 		"/api/control/rotate": (init) => record("rotate", init),
+		"/api/control/touch": (init) => record("touch", init),
+		"/api/control/alert": (init) => {
+			posts.push({ path: "alert", body: JSON.parse(String(init?.body)) });
+			return failing ? new Response("bad", { status: 400 }) : json({ alerts: alertsAfter });
+		},
 	});
 	function record(path: string, init?: RequestInit) {
 		posts.push({ path, body: JSON.parse(String(init?.body)) });
@@ -73,7 +91,8 @@ async function onlineDeps(state: ControlState = control()) {
 	const dataApi = new DataApi({ getBaseUrl: () => "http://s", fetch: f.fetch, connect: c.connect });
 	await studio.refetchConfig();
 	studio.control = state;
-	const deps: Deps = { studio, dataApi };
+	const extras = new ExtrasClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect });
+	const deps: Deps = { studio, dataApi, extras };
 	return {
 		deps,
 		posts,
@@ -83,7 +102,13 @@ async function onlineDeps(state: ControlState = control()) {
 			if (stream) stream.options.onOpen!();
 			else studio.online = true; // nothing started yet: pretend the stream was open already
 		},
-		failPosts: () => (reply = new Response("bad", { status: 400 })),
+		failPosts: () => {
+			reply = new Response("bad", { status: 400 });
+			failing = true;
+		},
+		/** What the server answers to the next alert post. */
+		setAlertsAfter: (alerts: ActiveAlert[]) => (alertsAfter = alerts),
+		extras,
 		studio,
 		dataApi,
 	};
@@ -511,7 +536,11 @@ describe("sensor value", () => {
 		});
 		const c = fakeConnector();
 		const studio = new StudioClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect });
-		const key = new SensorValue({ studio, dataApi: new DataApi({ getBaseUrl: () => "http://s", fetch: f.fetch, connect: c.connect }) });
+		const key = new SensorValue({
+			studio,
+			dataApi: new DataApi({ getBaseUrl: () => "http://s", fetch: f.fetch, connect: c.connect }),
+			extras: new ExtrasClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect }),
+		});
 		const a = keyAction();
 		a.getSettings.mockResolvedValue({ sensorFilter: "spot" } as never);
 		await key.onSendToPlugin({ action: a, payload: { event: "getSensors" } } as never);
@@ -520,5 +549,535 @@ describe("sensor value", () => {
 			event: "getSensors",
 			items: [{ label: "spotify", children: [{ label: "spotify.track", value: "spotify.track" }] }],
 		});
+	});
+});
+
+const alertOf = (id: string, patch: Partial<ActiveAlert> = {}): ActiveAlert => ({
+	id,
+	ruleId: "r1",
+	name: `Alert ${id}`,
+	severity: "info",
+	text: "",
+	startedAt: 1,
+	acknowledged: false,
+	...patch,
+});
+
+const rotatingState = (rotating: boolean) => control({ profiles: { main: { page: "p1", rotating, override: null }, solo: { page: "s1", rotating: false, override: null } } });
+
+describe("alerts key", () => {
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	const press = async (key: Alerts, a: ReturnType<typeof keyAction>, holdMs: number) => {
+		key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		vi.advanceTimersByTime(holdMs);
+		await key.onKeyUp({ action: a, payload: { settings: {} } } as never);
+	};
+
+	it("shows a muted bell on a card while nothing is active, and counts only visible alerts", async () => {
+		const t = await onlineDeps(control({ alerts: [alertOf("acked", { acknowledged: true }), alertOf("quiet", { quiet: true })] }));
+		t.goOnline();
+		const key = new Alerts(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: {} }, key);
+		const svg = decode(a.setImage.mock.calls[0]!);
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(svg).toContain(">No alerts</text>");
+	});
+
+	it("fills by the worst severity with the count and the newest name, and follows the control state", async () => {
+		const t = await onlineDeps(
+			control({
+				alerts: [
+					alertOf("old", { startedAt: 1, severity: "critical" }),
+					alertOf("new", { startedAt: 5, severity: "warning", name: "Disk low" }),
+					alertOf("acked", { startedAt: 9, severity: "critical", acknowledged: true }),
+				],
+			}),
+		);
+		t.goOnline();
+		const key = new Alerts(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: {} }, key);
+		const svg = decode(a.setImage.mock.calls[0]!);
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.destructive}"/>`);
+		expect(svg).toContain(">2</text>");
+		expect(svg).toContain(">Disk low</text>");
+
+		t.studio.control = control({ alerts: [alertOf("w", { severity: "warning" })] });
+		(t.studio as unknown as { notify: () => void }).notify();
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(`<rect width="144" height="144" fill="${P.warn}"/>`);
+		t.studio.control = control({ alerts: [alertOf("i")] });
+		(t.studio as unknown as { notify: () => void }).notify();
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+	});
+
+	it("shows the offline face while the studio is unreachable", async () => {
+		const t = await onlineDeps(control({ alerts: [alertOf("a")] }));
+		const key = new Alerts(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: {} }, key);
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(">Offline</text>");
+	});
+
+	it("acknowledges the newest visible alert on a short press and repaints from the reply", async () => {
+		const t = await onlineDeps(control({ alerts: [alertOf("old", { startedAt: 1 }), alertOf("new", { startedAt: 5 }), alertOf("newer-acked", { startedAt: 9, acknowledged: true })] }));
+		t.goOnline();
+		t.setAlertsAfter([alertOf("old", { startedAt: 1 }), alertOf("new", { startedAt: 5, acknowledged: true })]);
+		const key = new Alerts(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: {} }, key);
+		await press(key, a, HOLD_MS - 1);
+		expect(t.posts).toEqual([{ path: "alert", body: { id: "new", action: "ack" } }]);
+		expect(a.showOk).not.toHaveBeenCalled();
+		expect(a.showAlert).not.toHaveBeenCalled();
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(">Alert old</text>"); // the face changed, no tick
+	});
+
+	it("dismisses the newest non-quiet alert on a hold, acknowledged or not", async () => {
+		const t = await onlineDeps(control({ alerts: [alertOf("visible", { startedAt: 1 }), alertOf("acked", { startedAt: 5, acknowledged: true }), alertOf("quiet", { startedAt: 9, quiet: true })] }));
+		t.goOnline();
+		const key = new Alerts(t.deps);
+		const a = keyAction();
+		await press(key, a, HOLD_MS);
+		expect(t.posts).toEqual([{ path: "alert", body: { id: "acked", action: "dismiss" } }]);
+		expect(a.showAlert).not.toHaveBeenCalled();
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+
+	it("alerts when there is nothing to act on, offline, or when the post fails", async () => {
+		const t = await onlineDeps(control({ alerts: [alertOf("acked", { acknowledged: true }), alertOf("quiet", { quiet: true })] }));
+		const key = new Alerts(t.deps);
+		const a = keyAction();
+		t.studio.control = control({ alerts: [alertOf("x")] });
+		await press(key, a, 0); // offline, with an alert that would be acknowledged
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		expect(t.posts).toEqual([]);
+		t.studio.control = control({ alerts: [alertOf("acked", { acknowledged: true }), alertOf("quiet", { quiet: true })] });
+		t.goOnline();
+		await press(key, a, 0); // an acknowledged alert and a quiet one: nothing visible to acknowledge
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+		t.studio.control = control({ alerts: [alertOf("quiet", { quiet: true })] });
+		await press(key, a, HOLD_MS); // only quiet alerts: nothing to dismiss
+		expect(a.showAlert).toHaveBeenCalledTimes(3);
+		expect(t.posts).toEqual([]);
+		t.studio.control = control({ alerts: [alertOf("x")] });
+		t.failPosts();
+		await press(key, a, 0);
+		expect(a.showAlert).toHaveBeenCalledTimes(4);
+		expect(t.posts).toHaveLength(1);
+	});
+});
+
+describe("test alert key", () => {
+	it("tints the flask by the rule severity and names the rule", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new TestAlert(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: { rule: "r1" } }, key);
+		const svg = decode(a.setImage.mock.calls[0]!);
+		expect(svg).toContain(">CPU hot</text>");
+		expect(svg).toContain(`stroke="${P.destructive}"`);
+	});
+
+	it("asks for a rule when none is set or the rule is gone", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new TestAlert(t.deps);
+		const a = keyAction("a");
+		const b = keyAction("b");
+		appear({ action: a, settings: {} }, key);
+		appear({ action: b, settings: { rule: "deleted" } }, key);
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(">Pick a rule</text>");
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(">Pick a rule</text>");
+	});
+
+	it("posts the rule as a test alert and confirms with showOk", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new TestAlert(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: { rule: "r2" } } } as never);
+		expect(t.posts).toEqual([{ path: "alert", body: { ruleId: "r2", action: "test" } }]);
+		expect(a.showOk).toHaveBeenCalledTimes(1);
+		expect(a.showAlert).not.toHaveBeenCalled();
+	});
+
+	it("alerts without a rule, offline, or when the server refuses", async () => {
+		const t = await onlineDeps();
+		const key = new TestAlert(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: { rule: "r1" } } } as never); // offline
+		t.goOnline();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+		expect(t.posts).toEqual([]);
+		t.failPosts();
+		await key.onKeyDown({ action: a, payload: { settings: { rule: "nope" } } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(3);
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+
+	it("serves the rules to the inspector and still answers the profile requests", async () => {
+		const t = await onlineDeps();
+		const key = new TestAlert(t.deps);
+		const a = keyAction();
+		await key.onSendToPlugin({ action: a, payload: { event: "getRules" } } as never);
+		expect(streamDeck.ui.sendToPropertyInspector).toHaveBeenLastCalledWith({
+			event: "getRules",
+			items: [
+				{ label: "CPU hot", value: "r1" },
+				{ label: "Disk low", value: "r2" },
+			],
+		});
+		await key.onSendToPlugin({ action: a, payload: { event: "getProfiles" } } as never);
+		expect(vi.mocked(streamDeck.ui.sendToPropertyInspector).mock.calls.at(-1)![0]).toMatchObject({ event: "getProfiles" });
+	});
+});
+
+describe("pause rotation key", () => {
+	it("shows the pause caption while the profile rotates and a muted face otherwise", async () => {
+		const on = await onlineDeps(rotatingState(true));
+		on.goOnline();
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new PauseRotation(on.deps));
+		const svg = decode(a.setImage.mock.calls[0]!);
+		expect(svg).toContain(">Pause 30 s</text>");
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+
+		const off = await onlineDeps(rotatingState(false));
+		off.goOnline();
+		const b = keyAction();
+		appear({ action: b, settings: {} }, new PauseRotation(off.deps));
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(">Not rotating</text>");
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(`<rect width="144" height="144" fill="${P.muted}"/>`);
+	});
+
+	it("shows the real hold: the profile's rotate period when it is longer than 30 s", async () => {
+		const t = await onlineDeps(rotatingState(true));
+		t.goOnline();
+		t.studio.config = { ...config, profiles: config.profiles.map((p) => (p.id === "main" ? { ...p, rotate: { enabled: true, seconds: 90 } } : p)) };
+		const a = keyAction();
+		appear({ action: a, settings: {} }, new PauseRotation(t.deps));
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(">Pause 90 s</text>");
+		t.studio.config = { ...config, profiles: config.profiles.map((p) => (p.id === "main" ? { ...p, rotate: { enabled: true, seconds: 10 } } : p)) };
+		const b = keyAction("k2");
+		appear({ action: b, settings: {} }, new PauseRotation(t.deps));
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(">Pause 30 s</text>");
+	});
+
+	it("posts a touch for the chosen profile, or none, and confirms with showOk", async () => {
+		const t = await onlineDeps(rotatingState(true));
+		t.goOnline();
+		const key = new PauseRotation(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never);
+		await key.onKeyDown({ action: a, payload: { settings: { profile: "main" } } } as never);
+		expect(t.posts).toEqual([
+			{ path: "touch", body: {} },
+			{ path: "touch", body: { profile: "main" } },
+		]);
+		expect(a.showOk).toHaveBeenCalledTimes(2);
+		expect(a.showAlert).not.toHaveBeenCalled();
+	});
+
+	it("alerts without posting when the profile is not rotating or the studio is offline", async () => {
+		const t = await onlineDeps(rotatingState(true));
+		const key = new PauseRotation(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never); // offline, though rotating
+		expect(t.posts).toEqual([]);
+		t.studio.control = rotatingState(false);
+		t.goOnline();
+		await key.onKeyDown({ action: a, payload: { settings: {} } } as never); // not rotating
+		expect(a.showAlert).toHaveBeenCalledTimes(2);
+		expect(t.posts).toEqual([]);
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+
+	it("alerts when the server refuses", async () => {
+		const t = await onlineDeps(rotatingState(true));
+		t.goOnline();
+		t.failPosts();
+		const a = keyAction();
+		await new PauseRotation(t.deps).onKeyDown({ action: a, payload: { settings: {} } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		expect(a.showOk).not.toHaveBeenCalled();
+	});
+});
+
+describe("agents key", () => {
+	const session = (key: string, patch: Partial<AgentSession> = {}): AgentSession => ({ key, agent: "claude", project: key, state: "working", since: 1, ...patch });
+	type T = Awaited<ReturnType<typeof onlineDeps>>;
+
+	/** Brings both streams up (the studio control stream and the extras stream) once the keys have appeared. */
+	const up = (t: T) => {
+		t.goOnline();
+		t.connector.find("/events/extras")?.options.onOpen!();
+	};
+	const send = (t: T, sessions: AgentSession[]) => t.connector.find("/events/extras")!.options.onMessage(JSON.stringify({ agents: { sessions } }));
+	const fill = (svg: string) => svg.match(/<rect[^>]*fill="(#[0-9a-f]{6})"/)![1];
+
+	it("prefers waiting over working over idle", async () => {
+		const t = await onlineDeps();
+		const key = new Agents(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: {} }, key);
+		up(t);
+		send(t, []);
+		const idle = decode(a.setImage.mock.calls.at(-1)!);
+		expect(idle).toContain(">Idle</text>");
+		expect(fill(idle)).toBe(P.muted);
+
+		send(t, [session("a"), session("b"), session("c", { state: "done" })]);
+		const working = decode(a.setImage.mock.calls.at(-1)!);
+		expect(fill(working)).toBe(P.card);
+		expect(working).toContain(">2</text>");
+		expect(working).toContain(">working</text>");
+
+		send(t, [session("a"), session("b", { state: "waiting", project: "infopanel", since: 5 })]);
+		const waiting = decode(a.setImage.mock.calls.at(-1)!);
+		expect(fill(waiting)).toBe(P.warn);
+		expect(waiting).toContain(">infopanel</text>");
+		expect(waiting).not.toContain("waiting</text>");
+
+		send(t, [
+			session("a", { state: "waiting", project: "old", since: 1 }),
+			session("b", { state: "waiting", project: "newest", since: 9 }),
+			session("c", { state: "waiting", project: "mid", since: 4 }),
+		]);
+		const many = decode(a.setImage.mock.calls.at(-1)!);
+		expect(many).toContain(">newest</text>");
+		expect(many).toContain(">3 waiting</text>");
+	});
+
+	it("filters by agent", async () => {
+		const t = await onlineDeps();
+		const key = new Agents(t.deps);
+		const claude = keyAction("claude");
+		const codex = keyAction("codex");
+		const both = keyAction("both");
+		appear({ action: claude, settings: { agent: "claude" } }, key);
+		appear({ action: codex, settings: { agent: "codex" } }, key);
+		appear({ action: both, settings: { agent: "" } }, key);
+		up(t);
+		send(t, [session("a", { agent: "claude" }), session("b", { agent: "codex", state: "waiting", project: "porting" }), session("c", { agent: "claude" })]);
+		expect(decode(claude.setImage.mock.calls.at(-1)!)).toContain(">2</text>");
+		expect(decode(codex.setImage.mock.calls.at(-1)!)).toContain(">porting</text>");
+		expect(fill(decode(both.setImage.mock.calls.at(-1)!))).toBe(P.warn);
+		send(t, [session("a", { agent: "claude" })]);
+		expect(decode(codex.setImage.mock.calls.at(-1)!)).toContain(">Idle</text>");
+	});
+
+	it("shows the offline face while the extras stream or the studio is down, then recovers", async () => {
+		const t = await onlineDeps();
+		const key = new Agents(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: {} }, key);
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(">Offline</text>");
+		t.goOnline(); // studio only
+		send(t, [session("a")]);
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(">Offline</text>");
+		t.connector.find("/events/extras")!.options.onOpen!();
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(">working</text>");
+		t.connector.find("/events/extras")!.options.onClose!();
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(">Offline</text>");
+	});
+
+	it("starts and stops both clients with the keys", async () => {
+		const t = await onlineDeps();
+		const key = new Agents(t.deps);
+		const a = keyAction("a");
+		const b = keyAction("b");
+		appear({ action: a, settings: {} }, key);
+		appear({ action: b, settings: {} }, key);
+		expect(t.connector.open()).toHaveLength(3); // control, config, extras
+		key.onWillDisappear({ action: { id: "a" } } as never);
+		expect(t.connector.open()).toHaveLength(3);
+		key.onWillDisappear({ action: { id: "b" } } as never);
+		expect(t.connector.open()).toHaveLength(0);
+		const painted = a.setImage.mock.calls.length + b.setImage.mock.calls.length;
+		(t.extras as unknown as { notify: () => void }).notify();
+		(t.studio as unknown as { notify: () => void }).notify();
+		expect(a.setImage.mock.calls.length + b.setImage.mock.calls.length).toBe(painted); // no listener is left behind
+	});
+
+	it("opens the configured page on press, and does nothing without one", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const key = new Agents(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: { agent: "claude" } } } as never);
+		expect(t.posts).toEqual([]);
+		expect(a.showAlert).not.toHaveBeenCalled();
+		await key.onKeyDown({ action: a, payload: { settings: { page: "p3", profile: "main" } } } as never);
+		await key.onKeyDown({ action: a, payload: { settings: { page: "p1", profile: "" } } } as never);
+		expect(t.posts).toEqual([
+			{ path: "page", body: { profile: "main", page: "p3" } },
+			{ path: "page", body: { page: "p1" } },
+		]);
+		t.failPosts();
+		await key.onKeyDown({ action: a, payload: { settings: { page: "p3" } } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+	});
+
+	it("alerts on a page press while the studio is offline, and follows the profile in the page select", async () => {
+		const t = await onlineDeps();
+		const key = new Agents(t.deps);
+		const a = keyAction();
+		await key.onKeyDown({ action: a, payload: { settings: { page: "p3" } } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+		appear({ action: a, settings: {} }, key);
+		key.onDidReceiveSettings({ action: a, payload: { settings: { profile: "solo" } } } as never);
+		expect(vi.mocked(streamDeck.ui.sendToPropertyInspector).mock.calls.at(-1)![0]).toMatchObject({ event: "getPages", items: [{ value: "s1" }] });
+	});
+});
+
+describe("sensor value bar style", () => {
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	const reading = (t: Awaited<ReturnType<typeof onlineDeps>>, sensors: Record<string, object>) =>
+		t.connector.find("/events?prefix=")!.options.onMessage(JSON.stringify({ timestamp: 1, sensors, removed: [] }));
+	const barFill = (svg: string, color: string) => svg.includes(`height="12" rx="6" fill="${color}"`);
+
+	it("draws a bar for a percent sensor without a max and no sparkline", async () => {
+		const t = await onlineDeps();
+		const key = new SensorValue(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: { sensor: "system.cpu.load", style: "bar" } }, key);
+		reading(t, { "system.cpu.load": { value: 25, unit: "%" } });
+		const svg = decode(a.setImage.mock.calls.at(-1)!);
+		expect(svg).toContain(`width="28" height="12" rx="6" fill="${P.primary}"`); // 25 % of 112
+		expect(svg).not.toContain("<path");
+	});
+
+	it("uses the bar max setting, the severity colour and clamps", async () => {
+		const t = await onlineDeps();
+		const key = new SensorValue(t.deps);
+		const a = keyAction();
+		appear({ action: a, settings: { sensor: "gpu.fan.speed", style: "bar", barMax: "2000", warn: 1000, crit: 1500 } }, key);
+		reading(t, { "gpu.fan.speed": { value: 1000, unit: "rpm" } });
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(`width="56" height="12" rx="6" fill="${P.warn}"`);
+		await vi.advanceTimersByTimeAsync(REPAINT_MS);
+		reading(t, { "gpu.fan.speed": { value: 5000, unit: "rpm" } });
+		await vi.advanceTimersByTimeAsync(REPAINT_MS);
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(`width="112" height="12" rx="6" fill="${P.destructive}"`);
+	});
+
+	it("falls back to the sparkline without a bar max, and draws no bar in the default style", async () => {
+		const t = await onlineDeps();
+		const key = new SensorValue(t.deps);
+		const a = keyAction("a");
+		appear({ action: a, settings: { sensor: "gpu.fan.speed", style: "bar" } }, key);
+		reading(t, { "gpu.fan.speed": { value: 1000, unit: "rpm" } });
+		await vi.advanceTimersByTimeAsync(REPAINT_MS);
+		reading(t, { "gpu.fan.speed": { value: 1200, unit: "rpm" } });
+		await vi.advanceTimersByTimeAsync(REPAINT_MS);
+		const fallback = decode(a.setImage.mock.calls.at(-1)!);
+		expect(fallback).toContain("<path");
+		expect(barFill(fallback, P.primary)).toBe(false);
+
+		const c = keyAction("c");
+		appear({ action: c, settings: { sensor: "gpu.fan.speed", barMax: "2000" } }, key); // max set, but sparkline style
+		const sparkline = decode(c.setImage.mock.calls.at(-1)!);
+		expect(sparkline).toContain("<path");
+		expect(barFill(sparkline, P.primary)).toBe(false);
+	});
+});
+
+describe("sensor dial", () => {
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	const reading = (t: Awaited<ReturnType<typeof onlineDeps>>, sensors: Record<string, object>) =>
+		t.connector.find("/events?prefix=")!.options.onMessage(JSON.stringify({ timestamp: 1, sensors, removed: [] }));
+
+	it("sets the strip feedback with label, value + unit and the bar, resending only on change", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const dial = new SensorDial(t.deps);
+		const a = dialAction();
+		appear({ action: a, settings: { sensor: "system.cpu.load", warn: 70 } }, dial);
+		expect(a.setFeedback.mock.calls[0]![0]).toMatchObject({ label: { value: "load" }, value: { value: "—" }, bar: { value: 0 } });
+		reading(t, { "system.cpu.load": { value: 80, unit: "%", name: "CPU Load" } });
+		expect(a.setFeedback).toHaveBeenCalledTimes(2);
+		expect(a.setFeedback.mock.calls[1]![0]).toEqual({
+			label: { value: "CPU Load", color: P.mutedFg },
+			value: { value: "80 %", color: P.warn },
+			bar: { value: 80, bar_fill_c: P.warn },
+		});
+		await vi.advanceTimersByTimeAsync(REPAINT_MS);
+		reading(t, { "system.cpu.load": { value: 80, unit: "%", name: "CPU Load" } });
+		await vi.advanceTimersByTimeAsync(REPAINT_MS);
+		expect(a.setFeedback).toHaveBeenCalledTimes(2);
+	});
+
+	it("uses the bar max setting, and an empty bar without one", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const dial = new SensorDial(t.deps);
+		const a = dialAction();
+		appear({ action: a, settings: { sensor: "gpu.fan.speed", barMax: 2000 } }, dial);
+		reading(t, { "gpu.fan.speed": { value: 500, unit: "rpm" } });
+		expect(a.setFeedback.mock.calls.at(-1)![0]).toMatchObject({ bar: { value: 25 } });
+		dial.onDidReceiveSettings({ action: a, payload: { settings: { sensor: "gpu.fan.speed" } } } as never);
+		expect(a.setFeedback.mock.calls.at(-1)![0]).toMatchObject({ value: { value: "500 rpm" }, bar: { value: 0 } });
+	});
+
+	it("goes muted only when there is neither a reading nor the studio, and keeps showing the reading without the studio", async () => {
+		const t = await onlineDeps();
+		const dial = new SensorDial(t.deps);
+		const a = dialAction();
+		appear({ action: a, settings: { sensor: "x.y" } }, dial);
+		expect(a.setFeedback.mock.calls[0]![0]).toMatchObject({ label: { value: "Offline" } });
+		reading(t, { "x.y": { value: 40, unit: "%", name: "Temp" } }); // the studio is still down
+		expect(a.setFeedback.mock.calls.at(-1)![0]).toMatchObject({ label: { value: "Temp" }, value: { value: "40 %" } });
+	});
+
+	it("opens the configured page on press and touch, alerting on failure and doing nothing without a page", async () => {
+		const t = await onlineDeps();
+		t.goOnline();
+		const dial = new SensorDial(t.deps);
+		const a = dialAction();
+		await dial.onDialDown({ action: a, payload: { settings: { sensor: "x.y" } } } as never);
+		await dial.onTouchTap({ action: a, payload: { settings: { sensor: "x.y" } } } as never);
+		expect(t.posts).toEqual([]);
+		expect(a.showAlert).not.toHaveBeenCalled();
+		await dial.onDialDown({ action: a, payload: { settings: { page: "p3", profile: "main" } } } as never);
+		await dial.onTouchTap({ action: a, payload: { settings: { page: "p1" } } } as never);
+		expect(t.posts).toEqual([
+			{ path: "page", body: { profile: "main", page: "p3" } },
+			{ path: "page", body: { page: "p1" } },
+		]);
+		t.failPosts();
+		await dial.onTouchTap({ action: a, payload: { settings: { page: "p3" } } } as never);
+		expect(a.showAlert).toHaveBeenCalledTimes(1);
+	});
+
+	it("follows a changed sensor, ignores keys and releases everything when the dial goes away", async () => {
+		const t = await onlineDeps();
+		const dial = new SensorDial(t.deps);
+		appear({ action: keyAction(), settings: {} }, dial);
+		expect(t.connector.open()).toHaveLength(0);
+		const a = dialAction();
+		appear({ action: a, settings: { sensor: "spotify.track" } }, dial);
+		dial.onDidReceiveSettings({ action: a, payload: { settings: { sensor: "net.up.rate" } } } as never);
+		expect(t.connector.connections.find((c) => c.options.url.includes("prefix=spotify."))!.closed).toBe(true);
+		expect(t.connector.find("prefix=net.up.")).toBeDefined();
+		dial.onWillDisappear({ action: { id: "d1" } } as never);
+		expect(t.connector.open()).toHaveLength(0);
+	});
+
+	it("answers the inspector's profile and page requests", async () => {
+		const t = await onlineDeps();
+		const dial = new SensorDial(t.deps);
+		const a = { ...dialAction(), getSettings: async () => ({ profile: "solo" }) };
+		await dial.onSendToPlugin({ action: a, payload: { event: "getPages" } } as never);
+		expect(streamDeck.ui.sendToPropertyInspector).toHaveBeenLastCalledWith({ event: "getPages", items: [{ label: "Only", value: "s1" }] });
+		await dial.onSendToPlugin({ action: a, payload: { event: "getProfiles" } } as never);
+		expect(vi.mocked(streamDeck.ui.sendToPropertyInspector).mock.calls.at(-1)![0]).toMatchObject({ event: "getProfiles" });
 	});
 });

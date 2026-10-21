@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>Coding agents</title>
+		<meta charset="utf-8" />
+		<script src="sdpi-components.js"></script>
+	</head>
+
+	<body>
+		<sdpi-item label="Agent">
+			<sdpi-select setting="agent" default="">
+				<option value="">Both</option>
+				<option value="claude">Claude Code</option>
+				<option value="codex">Codex</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-heading>On press</sdpi-heading>
+		<sdpi-item label="Open page">
+			<sdpi-select setting="page" datasource="getPages" loading="Loading..." placeholder="None" hot-reload show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Profile">
+			<sdpi-select setting="profile" datasource="getProfiles" loading="Loading..." placeholder="Shown profile" hot-reload show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-heading>Connection</sdpi-heading>
+		<sdpi-item label="Studio">
+			<sdpi-textfield setting="studioUrl" global placeholder="http://127.0.0.1:3922"></sdpi-textfield>
+		</sdpi-item>
+		<sdpi-item label="Data API">
+			<sdpi-textfield setting="dataApiUrl" global placeholder="http://127.0.0.1:3921"></sdpi-textfield>
+		</sdpi-item>
+	</body>
+</html>

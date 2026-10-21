@@ -21,11 +21,35 @@ export interface ProfileInfo {
 	rotate?: { enabled?: boolean; seconds?: number; pages?: string[] };
 }
 
+export type AlertSeverity = "info" | "warning" | "critical";
+
+/** A live alert from the Studio's alert rules. */
+export interface ActiveAlert {
+	id: string;
+	ruleId: string;
+	name: string;
+	severity: AlertSeverity;
+	text: string;
+	value?: number | string;
+	unit?: string;
+	startedAt: number;
+	acknowledged: boolean;
+	quiet?: boolean;
+	test?: boolean;
+}
+
+export interface AlertRuleInfo {
+	id: string;
+	name: string;
+	severity: AlertSeverity;
+}
+
 export interface StudioConfig {
 	version: number;
 	activeProfile?: string;
 	theme: ThemeTokens;
 	profiles: ProfileInfo[];
+	alertRules: AlertRuleInfo[];
 }
 
 export interface ProfileControl {
@@ -38,6 +62,7 @@ export interface ControlState {
 	profile: string | null;
 	shown: string | null;
 	profiles: Record<string, ProfileControl>;
+	alerts: ActiveAlert[];
 }
 
 export interface StudioClientOptions {
@@ -51,7 +76,31 @@ const REQUEST_TIMEOUT_MS = 5000;
 const asObject = (value: unknown): Record<string, unknown> | undefined =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 
-const parseConfig = (raw: unknown): StudioConfig | undefined => {
+const SEVERITY_RANK: Record<AlertSeverity, number> = { info: 0, warning: 1, critical: 2 };
+
+const asSeverity = (value: unknown): AlertSeverity => (value === "warning" || value === "critical" ? value : "info");
+
+const parseAlerts = (raw: unknown): ActiveAlert[] =>
+	Array.isArray(raw)
+		? raw
+				.filter((a) => a && typeof a.id === "string")
+				.map((a) => ({ ...a, severity: asSeverity(a.severity), name: String(a.name ?? a.id), startedAt: Number(a.startedAt) || 0, acknowledged: a.acknowledged === true }))
+		: [];
+
+const parseAlertRules = (raw: unknown): AlertRuleInfo[] => {
+	const rules = asObject(raw)?.rules;
+	if (!Array.isArray(rules)) return [];
+	return rules
+		.filter((r) => r && typeof r.id === "string")
+		.map((r) => ({ id: r.id as string, name: typeof r.name === "string" && r.name ? r.name : (r.id as string), severity: asSeverity(r.severity) }));
+};
+
+/** The most severe of the alerts (critical > warning > info); undefined for an empty list. */
+export function worstSeverity(alerts: readonly ActiveAlert[]): AlertSeverity | undefined {
+	return alerts.reduce<AlertSeverity | undefined>((worst, a) => (worst === undefined || SEVERITY_RANK[a.severity] > SEVERITY_RANK[worst] ? a.severity : worst), undefined);
+}
+
+const parseConfig =(raw: unknown): StudioConfig | undefined => {
 	const obj = asObject(raw);
 	if (!obj || !Array.isArray(obj.profiles)) return undefined;
 	return {
@@ -61,6 +110,7 @@ const parseConfig = (raw: unknown): StudioConfig | undefined => {
 		profiles: (obj.profiles as ProfileInfo[])
 			.filter((p) => p && typeof p.id === "string")
 			.map((p) => ({ ...p, pages: Array.isArray(p.pages) ? p.pages : [] })),
+		alertRules: parseAlertRules(obj.alerts),
 	};
 };
 
@@ -72,6 +122,7 @@ const parseControl = (raw: unknown): ControlState | undefined => {
 		profile: typeof obj.profile === "string" ? obj.profile : null,
 		shown: typeof obj.shown === "string" ? obj.shown : null,
 		profiles: profiles as Record<string, ProfileControl>,
+		alerts: parseAlerts(obj.alerts),
 	};
 };
 
@@ -246,6 +297,37 @@ export class StudioClient {
 
 	postRotate(profile: string | undefined, state: RotateState): Promise<ControlState | null> {
 		return this.post("rotate", profile ? { profile, state } : { state });
+	}
+
+	/** Hold page rotation (the server only does so for a rotating profile). */
+	postTouch(profile: string | undefined): Promise<ControlState | null> {
+		return this.post("touch", profile ? { profile } : {});
+	}
+
+	/** Acknowledge or dismiss an alert, or fire a rule's test alert. The reply carries the alert list only. */
+	async postAlert(body: { id: string; action: "ack" | "dismiss" } | { ruleId: string; action: "test" }): Promise<boolean> {
+		try {
+			const res = await this.doFetch(`${this.base()}/api/control/alert`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-Dashboard-Control": "1" },
+				body: JSON.stringify(body),
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			});
+			if (!res.ok) return false;
+			const alerts = parseAlerts(asObject(await res.json())?.alerts);
+			if (this.control) {
+				this.control = { ...this.control, alerts };
+				this.notify();
+			}
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** Alerts to show: not acknowledged, not quiet, newest first. */
+	visibleAlerts(): ActiveAlert[] {
+		return (this.control?.alerts ?? []).filter((a) => !a.acknowledged && !a.quiet).sort((a, b) => b.startedAt - a.startedAt);
 	}
 
 	profileById(id: string | null | undefined): ProfileInfo | undefined {

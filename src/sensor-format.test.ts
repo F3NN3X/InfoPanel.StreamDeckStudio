@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pageItems, profileItems, sensorItems } from "./actions/datasource";
 import { StudioClient, type StudioConfig } from "./studio";
-import { formatValue, severity, sparklinePath, toNumber } from "./sensor-format";
+import { barFraction, barMaxOf, formatValue, severity, sparklinePath, toNumber } from "./sensor-format";
 import { fakeConnector, fakeFetch, json } from "./test-utils";
 import { throttle } from "./throttle";
 
@@ -107,6 +107,7 @@ describe("datasource items", () => {
 		version: 3,
 		activeProfile: "a",
 		theme: {},
+		alertRules: [],
 		profiles: [
 			{ id: "a", name: "Alpha", pages: [{ id: "p1", name: "Main" }, { id: "p2", name: "" }] },
 			{ id: "b", name: "Beta", pages: [{ id: "q1", name: "Only" }] },
@@ -144,5 +145,32 @@ describe("datasource items", () => {
 		const cpu = sensorItems(sensors, " CPU ", "spotify.track");
 		expect(cpu.flatMap((g) => g.children.map((c) => c.value))).toEqual(["system.cpu.load", "spotify.track"]);
 		expect(sensorItems(sensors, "zzz", undefined)).toEqual([]);
+	});
+});
+
+describe("bar fill", () => {
+	it("takes the bar max from the setting, else 100 for percent and degree units", () => {
+		expect(barMaxOf("250", "%")).toBe(250);
+		expect(barMaxOf(" 8,5 ", "rpm")).toBe(8.5);
+		expect(barMaxOf(undefined, "%")).toBe(100);
+		expect(barMaxOf("", "°C")).toBe(100);
+		expect(barMaxOf("abc", "°F")).toBe(100);
+		expect(barMaxOf(undefined, "rpm")).toBeUndefined();
+		expect(barMaxOf(undefined, undefined)).toBeUndefined();
+	});
+
+	it("runs from 0 to the max, clamped", () => {
+		expect(barFraction(50, 100)).toBe(0.5);
+		expect(barFraction(0, 100)).toBe(0);
+		expect(barFraction(-5, 100)).toBe(0);
+		expect(barFraction(150, 100)).toBe(1);
+		expect(barFraction(1, 4)).toBe(0.25);
+	});
+
+	it("has no fill without a value or a positive max", () => {
+		expect(barFraction(undefined, 100)).toBeUndefined();
+		expect(barFraction(5, undefined)).toBeUndefined();
+		expect(barFraction(5, 0)).toBeUndefined();
+		expect(barFraction(5, -10)).toBeUndefined();
 	});
 });
