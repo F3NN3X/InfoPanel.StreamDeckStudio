@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- README: a troubleshooting section (reload kiosk pages once after a Studio update; the kiosk controls need `?kiosk=1`).
+
 ## [0.3.0]
 
 Nine new actions for alerts, the kiosk displays, rotation, coding agents and sensors. Open

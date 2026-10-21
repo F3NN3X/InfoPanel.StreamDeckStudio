@@ -101,6 +101,15 @@ their own when it is back. The sensor dial keeps showing Data API readings while
 face reflects the result (page keys, Alerts, Mute, Dim, Island) change their face instead of showing the OK tick;
 Switch profile, Auto-rotate, Test alert, Pause rotation and Reload kiosk show the tick after a successful press.
 
+### Troubleshooting
+
+- **A key's press is accepted but the display does not change** (Dim display, Reload kiosk, Island): after updating
+  Studio, reload each kiosk page once (F5 in a browser, or restart InfoPanel's Web Page profile). A page loaded
+  before the update keeps running the old code, which does not know the new controls, and Reload kiosk cannot reach
+  it either.
+- **Dim display, Reload kiosk and Island only act on kiosk pages**: the display's URL needs `?kiosk=1`, and the key
+  acts on the profile that page shows. With Profile on "Shown profile", that is the profile a kiosk last reported.
+
 ## Studio API used
 
 The plugin only reads from Studio and posts to `/api/control/*`; it never edits the Studio config. Control posts
