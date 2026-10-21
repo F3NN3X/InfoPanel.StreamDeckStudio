@@ -9,7 +9,7 @@ and show live InfoPanel sensors on keys. Keys are drawn in Studio's own theme co
 | Action | Press | Face |
 |---|---|---|
 | Go to page | show that page (profile or "shown profile", page) | page icon + name, filled while the page is showing |
-| Next page / Previous page | next / previous page, wrapping | arrow + current page name |
+| Next page / Previous page | next / previous page, wrapping | arrow + name of the page a press goes to |
 | Switch profile | force a profile on the kiosks; "Auto" clears the override | profile name, filled while forced |
 | Auto-rotate | toggle rotation; hold 1 s = back to the saved setting | play / pause, `saved: on/off` while overridden, dimmed with fewer than 2 pages |
 | Page cycler (Stream Deck +) | dial: rotate = next / previous page, press = first page, touch = toggle rotation | touch strip: icon, page name, position bar `n / total`, rotating mark |
@@ -21,10 +21,12 @@ show the tick after a successful press.
 
 ## Install
 
-1. Build once (see Develop), then link the plugin folder into the Stream Deck app:
-   `npx streamdeck link com.f3nn3x.infopanel-studio.sdPlugin`
-   or pack it with `npm run pack` and open the resulting `.streamDeckPlugin`.
-2. Drag the actions from the **InfoPanel** category onto keys (or the dial).
+Needs Windows 10 or later and Stream Deck 7.1 or later.
+
+1. Download `com.f3nn3x.infopanel-studio.streamDeckPlugin` from the
+   [latest release](https://github.com/F3NN3X/InfoPanel.StreamDeckStudio/releases/latest/download/com.f3nn3x.infopanel-studio.streamDeckPlugin)
+   and double-click it; the Stream Deck app installs it (installing a newer release updates it in place).
+2. Drag the actions from the **InfoPanel Studio** category onto keys (or the dial).
 3. In any action's property inspector, **Connection** sets the server addresses (shared by all actions):
    - Studio, default `http://127.0.0.1:3922`. It needs the control routes (`/api/control`, `/events/control`).
    - Data API, default `http://127.0.0.1:3921` (InfoPanel's Data API, used by the Sensor value key).
@@ -33,6 +35,10 @@ Leaving "Profile" on **Shown profile** targets the profile a kiosk is showing (S
 override, shown, pinned, first).
 
 ## Develop
+
+To run from source, build once and link the plugin folder into the Stream Deck app
+(remove an installed release first; both use the same plugin UUID):
+`npx streamdeck link com.f3nn3x.infopanel-studio.sdPlugin`.
 
 ```
 npm install
@@ -63,7 +69,7 @@ Layout:
 
 ## Releasing
 
-1. Bump `version` in `package.json` and `Version` in `com.f3nn3x.infopanel-studio.sdPlugin/manifest.json` (Stream Deck format, `X.Y.Z.0`), and add a `CHANGELOG.md` entry if you keep one.
+1. Bump `version` in `package.json` and `Version` in `com.f3nn3x.infopanel-studio.sdPlugin/manifest.json` (Stream Deck format, `X.Y.Z.0`), and add a `## [X.Y.Z]` entry to `CHANGELOG.md` (it becomes the release notes).
 2. Commit, then push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 The *Release Build* workflow (`.github/workflows/release.yml`) runs the tests, builds, validates and packs the plugin, checks the tag matches `package.json`, and publishes `com.f3nn3x.infopanel-studio.streamDeckPlugin` to the GitHub release. It can also be run manually (workflow_dispatch) to build without releasing.
