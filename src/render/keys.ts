@@ -150,6 +150,67 @@ export function pauseKey(input: PauseKeyInput): string {
 	return frame(p.card, glyph("hourglass", 42, 18, 60, p.primary) + textEl(`Pause ${input.seconds} s`, { x: 72, y: 120, size: 20, fill: p.cardFg }));
 }
 
+export interface MuteKeyInput {
+	theme: ThemeTokens;
+	/** What a press mutes for. */
+	minutes: number;
+	/** Minutes of mute left, rounded up; 0 when not muted. */
+	left: number;
+}
+
+const muteLeft = (minutes: number): string => (minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`);
+
+export function muteKey(input: MuteKeyInput): string {
+	const p = palette(input.theme);
+	const muted = input.left > 0;
+	const t = tone(p, muted);
+	return frame(t.bg, glyph(muted ? "bell-off" : "bell", 42, 18, 60, t.icon) + caption(muted ? `Muted ${muteLeft(input.left)}` : `Mute ${input.minutes} min`, t.text));
+}
+
+export interface ReloadKeyInput {
+	theme: ThemeTokens;
+	/** The profile's name; "All kiosks" without one. */
+	name: string;
+}
+
+export function reloadKey(input: ReloadKeyInput): string {
+	const p = palette(input.theme);
+	return frame(p.card, glyph("rotate-cw", 42, 18, 60, p.primary) + caption(input.name, p.cardFg));
+}
+
+export interface DimKeyInput {
+	theme: ThemeTokens;
+	/** The display's dim level (0 = off). */
+	dim: number;
+}
+
+export function dimKey(input: DimKeyInput): string {
+	const p = palette(input.theme);
+	const dimmed = input.dim > 0;
+	const t = tone(p, dimmed);
+	return frame(t.bg, glyph(dimmed ? "moon" : "sun", 42, 18, 60, t.icon) + caption(dimmed ? `Dim ${Math.round(input.dim * 100)}%` : "Dim", t.text));
+}
+
+export interface IslandKeyInput {
+	theme: ThemeTokens;
+	island: boolean;
+	/** A runtime override of the profile's own setting. */
+	override: "on" | "off" | null;
+	/** The profile's own setting, shown when an override is in effect. */
+	saved: boolean;
+}
+
+export function islandSubtitle(input: Pick<IslandKeyInput, "island" | "override" | "saved">): string {
+	if (input.override) return `saved: ${input.saved ? "on" : "off"}`;
+	return input.island ? "showing" : "hidden";
+}
+
+export function islandKey(input: IslandKeyInput): string {
+	const p = palette(input.theme);
+	const t = tone(p, input.island);
+	return frame(t.bg, glyph("panel-top", 42, 18, 60, t.icon) + textEl(islandSubtitle(input), { x: 72, y: 120, size: 20, fill: t.text }));
+}
+
 export interface AgentsKeyInput {
 	theme: ThemeTokens;
 	/** Sessions waiting for the user, working, and the newest waiting one's project. */

@@ -9,11 +9,12 @@ export type SdpiGroup = { label: string; children: SdpiItem[] };
 
 export const SHOWN = "";
 
-/** Profiles, led by the "shown" entry (page keys) or "Auto" (switch-profile). */
-export function profileItems(studio: StudioClient, lead: "shown" | "auto" | null): SdpiItem[] {
+/** Profiles, led by the "shown" entry (page keys), "Auto" (switch-profile) or "All kiosks" (reload). */
+export function profileItems(studio: StudioClient, lead: "shown" | "auto" | "all" | null): SdpiItem[] {
 	const items = (studio.config?.profiles ?? []).map((p) => ({ label: p.name || p.id, value: p.id }));
 	if (lead === "shown") return [{ label: "Shown profile", value: SHOWN }, ...items];
 	if (lead === "auto") return [{ label: "Auto (clear override)", value: SHOWN }, ...items];
+	if (lead === "all") return [{ label: "All kiosks", value: SHOWN }, ...items];
 	return items;
 }
 

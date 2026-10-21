@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
 	"Name": "InfoPanel Studio",
-	"Version": "0.2.0.0",
+	"Version": "0.3.0.0",
 	"Author": "F3NN3X",
 	"Description": "Control InfoPanel Studio from Stream Deck: switch pages and profiles, rotate pages, and show live sensor values.",
 	"Category": "InfoPanel Studio",
@@ -217,6 +217,74 @@
 			"States": [
 				{
 					"Image": "imgs/actions/agents/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Mute alerts",
+			"UUID": "com.f3nn3x.infopanel-studio.mute-alerts",
+			"Icon": "imgs/actions/mute-alerts/icon",
+			"Tooltip": "Mute all alerts for a number of minutes; pressed while muted it unmutes. The key counts the time down.",
+			"PropertyInspectorPath": "ui/mute-alerts.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/mute-alerts/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Reload kiosk",
+			"UUID": "com.f3nn3x.infopanel-studio.reload-kiosk",
+			"Icon": "imgs/actions/reload-kiosk/icon",
+			"Tooltip": "Reload the Studio kiosk of a profile, or every kiosk.",
+			"PropertyInspectorPath": "ui/reload-kiosk.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/reload-kiosk/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Dim display",
+			"UUID": "com.f3nn3x.infopanel-studio.dim",
+			"Icon": "imgs/actions/dim/icon",
+			"Tooltip": "Dim or restore a profile's kiosk display. Leave Level empty to use the level the Studio remembers.",
+			"PropertyInspectorPath": "ui/dim.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/dim/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Island",
+			"UUID": "com.f3nn3x.infopanel-studio.island",
+			"Icon": "imgs/actions/island/icon",
+			"Tooltip": "Show or hide the kiosk's island. Hold 1 s to go back to the profile's saved setting.",
+			"PropertyInspectorPath": "ui/island.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/island/key",
 					"TitleAlignment": "middle"
 				}
 			]

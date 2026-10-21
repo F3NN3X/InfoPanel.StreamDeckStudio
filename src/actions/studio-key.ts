@@ -21,8 +21,8 @@ export abstract class StudioKey<S extends ProfileSettings, I extends { theme: Th
 	/** What the face depends on, given the resolved profile. */
 	protected abstract input(settings: S, profile: string | null): I;
 	protected abstract render(input: I): string;
-	/** Which entry leads the profile select: the shown profile (page keys) or Auto (switch profile). */
-	protected profileLead: "shown" | "auto" = "shown";
+	/** Which entry leads the profile select: the shown profile (page keys), Auto (switch profile) or all kiosks (reload). */
+	protected profileLead: "shown" | "auto" | "all" = "shown";
 
 	protected view(settings: S): View {
 		const { studio } = this.deps;

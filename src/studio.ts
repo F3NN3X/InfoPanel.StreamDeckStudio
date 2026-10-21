@@ -6,6 +6,7 @@ import { connectSse, type SseConnection, type SseConnector } from "./sse";
 
 export type ThemeTokens = Record<string, string>;
 export type RotateState = "on" | "off" | "toggle" | "saved";
+export type KioskToggle = "on" | "off" | "toggle";
 
 export interface PageInfo {
 	id: string;
@@ -19,6 +20,8 @@ export interface ProfileInfo {
 	theme?: Partial<ThemeTokens>;
 	pages: PageInfo[];
 	rotate?: { enabled?: boolean; seconds?: number; pages?: string[] };
+	/** The profile's own island; unset = none. */
+	island?: { enabled?: boolean };
 }
 
 export type AlertSeverity = "info" | "warning" | "critical";
@@ -56,6 +59,10 @@ export interface ProfileControl {
 	page: string | null;
 	rotating: boolean;
 	override: "on" | "off" | null;
+	/** Dim level (0 = off); absent on servers without the kiosk controls. */
+	dim?: number;
+	island?: boolean;
+	islandOverride?: "on" | "off" | null;
 }
 
 export interface ControlState {
@@ -63,6 +70,8 @@ export interface ControlState {
 	shown: string | null;
 	profiles: Record<string, ProfileControl>;
 	alerts: ActiveAlert[];
+	/** Epoch ms until which alerts are muted; null when not muted. */
+	mutedUntil: number | null;
 }
 
 export interface StudioClientOptions {
@@ -114,6 +123,8 @@ const parseConfig =(raw: unknown): StudioConfig | undefined => {
 	};
 };
 
+const asMutedUntil = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
 const parseControl = (raw: unknown): ControlState | undefined => {
 	const obj = asObject(raw);
 	const profiles = asObject(obj?.profiles);
@@ -123,6 +134,7 @@ const parseControl = (raw: unknown): ControlState | undefined => {
 		shown: typeof obj.shown === "string" ? obj.shown : null,
 		profiles: profiles as Record<string, ProfileControl>,
 		alerts: parseAlerts(obj.alerts),
+		mutedUntil: asMutedUntil(obj.mutedUntil),
 	};
 };
 
@@ -304,8 +316,8 @@ export class StudioClient {
 		return this.post("touch", profile ? { profile } : {});
 	}
 
-	/** Acknowledge or dismiss an alert, or fire a rule's test alert. The reply carries the alert list only. */
-	async postAlert(body: { id: string; action: "ack" | "dismiss" } | { ruleId: string; action: "test" }): Promise<boolean> {
+	/** Acknowledge or dismiss an alert, fire a rule's test alert, or mute alerts. The reply carries the alert list and the mute only. */
+	async postAlert(body: { id: string; action: "ack" | "dismiss" } | { ruleId: string; action: "test" } | { action: "mute"; minutes: number }): Promise<boolean> {
 		try {
 			const res = await this.doFetch(`${this.base()}/api/control/alert`, {
 				method: "POST",
@@ -314,15 +326,49 @@ export class StudioClient {
 				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 			});
 			if (!res.ok) return false;
-			const alerts = parseAlerts(asObject(await res.json())?.alerts);
+			const reply = asObject(await res.json());
+			const alerts = parseAlerts(reply?.alerts);
+			const muted = reply?.mutedUntil;
+			const hasMute = muted === null || (typeof muted === "number" && Number.isFinite(muted));
 			if (this.control) {
-				this.control = { ...this.control, alerts };
+				this.control = { ...this.control, alerts, ...(hasMute ? { mutedUntil: muted } : {}) };
 				this.notify();
 			}
 			return true;
 		} catch {
 			return false;
 		}
+	}
+
+	/** Mute alerts for some minutes; 0 unmutes. */
+	postMute(minutes: number): Promise<boolean> {
+		return this.postAlert({ action: "mute", minutes });
+	}
+
+	/** A kiosk action; the reply is the control state. */
+	postKiosk(body: Record<string, unknown>): Promise<ControlState | null> {
+		return this.post("kiosk", body);
+	}
+
+	/** Reload the kiosk of a profile, or every kiosk without one. */
+	postReload(profile: string | undefined): Promise<ControlState | null> {
+		return this.postKiosk(profile ? { action: "reload", profile } : { action: "reload" });
+	}
+
+	/** Dim a profile's display; without a level the server uses the one it remembers. */
+	postDim(profile: string | undefined, state: KioskToggle, level?: number): Promise<ControlState | null> {
+		return this.postKiosk({ action: "dim", ...(profile ? { profile } : {}), state, ...(level === undefined ? {} : { level }) });
+	}
+
+	/** Show or hide the island; "saved" clears the override. */
+	postIsland(profile: string | undefined, state: RotateState): Promise<ControlState | null> {
+		return this.postKiosk(profile ? { action: "island", profile, state } : { action: "island", state });
+	}
+
+	/** Milliseconds of mute left at `now`; 0 when not muted or expired. */
+	mutedFor(now = Date.now()): number {
+		const until = this.control?.mutedUntil;
+		return until == null ? 0 : Math.max(0, until - now);
 	}
 
 	/** Alerts to show: not acknowledged, not quiet, newest first. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hslToHex, palette } from "./color";
 import { hasIcon, iconBody, svgDataUrl } from "./icons";
-import { agentsKey, alertsKey, navKey, offlineKey, pageKey, pauseKey, profileKey, rotateKey, rotateSubtitle, testAlertKey } from "./keys";
+import { agentsKey, alertsKey, dimKey, islandKey, islandSubtitle, muteKey, navKey, offlineKey, pageKey, pauseKey, profileKey, reloadKey, rotateKey, rotateSubtitle, testAlertKey } from "./keys";
 import { sensorKey } from "./sensor";
 import { cyclerFeedback, sensorFeedback, stepTarget } from "./strip";
 import { escapeXml, fit, truncate, wrap } from "./text";
@@ -249,6 +249,70 @@ describe("pause rotation key", () => {
 		const off = pauseKey({ theme, rotating: false, seconds: 30 });
 		expect(off).toContain(`<rect width="144" height="144" fill="${P.muted}"/>`);
 		expect(off).toContain(">Not rotating</text>");
+	});
+});
+
+describe("mute key", () => {
+	it("is a card with a bell and the mute length while not muted", () => {
+		const svg = muteKey({ theme, minutes: 30, left: 0 });
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(svg).toContain(">Mute 30 min</text>");
+		expect(svg).toContain(`stroke="${P.primary}"`);
+		expect(svg).toContain(iconBody("bell"));
+	});
+
+	it("is filled with the remaining time while muted, in hours and minutes from an hour", () => {
+		const svg = muteKey({ theme, minutes: 30, left: 12 });
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+		expect(svg).toContain(">Muted 12m</text>");
+		expect(svg).toContain(iconBody("bell-off"));
+		expect(muteKey({ theme, minutes: 30, left: 59 })).toContain(">Muted 59m</text>");
+		expect(muteKey({ theme, minutes: 30, left: 60 })).toContain(">Muted 1h 0m</text>");
+		expect(muteKey({ theme, minutes: 30, left: 135 })).toContain(">Muted 2h 15m</text>");
+	});
+});
+
+describe("reload key", () => {
+	it("is a card with the reload glyph and the profile or kiosk name", () => {
+		const svg = reloadKey({ theme, name: "All kiosks" });
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(svg).toContain(">All kiosks</text>");
+		expect(svg).toContain(iconBody("rotate-cw"));
+		expect(reloadKey({ theme, name: "Main" })).toContain(">Main</text>");
+	});
+});
+
+describe("dim key", () => {
+	it("shows a sun on a card while the display is not dimmed", () => {
+		const svg = dimKey({ theme, dim: 0 });
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(svg).toContain(">Dim</text>");
+		expect(svg).toContain(iconBody("sun"));
+	});
+
+	it("is filled with a moon and the level while dimmed", () => {
+		const svg = dimKey({ theme, dim: 0.6 });
+		expect(svg).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+		expect(svg).toContain(">Dim 60%</text>");
+		expect(svg).toContain(iconBody("moon"));
+		expect(dimKey({ theme, dim: 0.35 })).toContain(">Dim 35%</text>");
+	});
+});
+
+describe("island key", () => {
+	it("is filled while the island shows and a card while hidden", () => {
+		const on = islandKey({ theme, island: true, override: null, saved: true });
+		expect(on).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`);
+		expect(on).toContain(">showing</text>");
+		expect(on).toContain(iconBody("panel-top"));
+		const off = islandKey({ theme, island: false, override: null, saved: true });
+		expect(off).toContain(`<rect width="144" height="144" fill="${P.card}"/>`);
+		expect(off).toContain(">hidden</text>");
+	});
+
+	it("shows the saved setting instead while it is overridden", () => {
+		expect(islandSubtitle({ island: true, override: "on", saved: false })).toBe("saved: off");
+		expect(islandKey({ theme, island: false, override: "off", saved: true })).toContain(">saved: on</text>");
 	});
 });
 
