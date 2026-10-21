@@ -1,13 +1,13 @@
 {
 	"$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
-	"Name": "InfoPanel Dashboard",
+	"Name": "InfoPanel Studio",
 	"Version": "0.1.0.0",
 	"Author": "F3NN3X",
-	"Description": "Control the InfoPanel Dashboard from Stream Deck: switch pages and profiles, rotate pages, and show live sensor values.",
-	"Category": "InfoPanel Dashboard",
+	"Description": "Control InfoPanel Studio from Stream Deck: switch pages and profiles, rotate pages, and show live sensor values.",
+	"Category": "InfoPanel Studio",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"Icon": "imgs/plugin/marketplace",
-	"UUID": "com.f3nn3x.infopanel-dashboard",
+	"UUID": "com.f3nn3x.infopanel-studio",
 	"CodePath": "bin/plugin.js",
 	"SDKVersion": 3,
 	"Software": {
@@ -26,9 +26,9 @@
 	"Actions": [
 		{
 			"Name": "Go to page",
-			"UUID": "com.f3nn3x.infopanel-dashboard.go-to-page",
+			"UUID": "com.f3nn3x.infopanel-studio.go-to-page",
 			"Icon": "imgs/actions/go-to-page/icon",
-			"Tooltip": "Show a dashboard page. The key lights up while that page is showing.",
+			"Tooltip": "Show a Studio page. The key lights up while that page is showing.",
 			"PropertyInspectorPath": "ui/go-to-page.html",
 			"UserTitleEnabled": false,
 			"Controllers": [
@@ -43,9 +43,9 @@
 		},
 		{
 			"Name": "Next page",
-			"UUID": "com.f3nn3x.infopanel-dashboard.next-page",
+			"UUID": "com.f3nn3x.infopanel-studio.next-page",
 			"Icon": "imgs/actions/next-page/icon",
-			"Tooltip": "Show the next dashboard page (wraps around).",
+			"Tooltip": "Show the next Studio page (wraps around).",
 			"PropertyInspectorPath": "ui/next-page.html",
 			"UserTitleEnabled": false,
 			"Controllers": [
@@ -60,9 +60,9 @@
 		},
 		{
 			"Name": "Previous page",
-			"UUID": "com.f3nn3x.infopanel-dashboard.prev-page",
+			"UUID": "com.f3nn3x.infopanel-studio.prev-page",
 			"Icon": "imgs/actions/prev-page/icon",
-			"Tooltip": "Show the previous dashboard page (wraps around).",
+			"Tooltip": "Show the previous Studio page (wraps around).",
 			"PropertyInspectorPath": "ui/prev-page.html",
 			"UserTitleEnabled": false,
 			"Controllers": [
@@ -77,9 +77,9 @@
 		},
 		{
 			"Name": "Switch profile",
-			"UUID": "com.f3nn3x.infopanel-dashboard.switch-profile",
+			"UUID": "com.f3nn3x.infopanel-studio.switch-profile",
 			"Icon": "imgs/actions/switch-profile/icon",
-			"Tooltip": "Force a dashboard profile on the kiosks, or choose Auto to clear the override.",
+			"Tooltip": "Force a Studio profile on the kiosks, or choose Auto to clear the override.",
 			"PropertyInspectorPath": "ui/switch-profile.html",
 			"UserTitleEnabled": false,
 			"Controllers": [
@@ -94,7 +94,7 @@
 		},
 		{
 			"Name": "Auto-rotate",
-			"UUID": "com.f3nn3x.infopanel-dashboard.auto-rotate",
+			"UUID": "com.f3nn3x.infopanel-studio.auto-rotate",
 			"Icon": "imgs/actions/auto-rotate/icon",
 			"Tooltip": "Press to toggle page rotation. Hold for one second to go back to the saved setting.",
 			"PropertyInspectorPath": "ui/auto-rotate.html",
@@ -111,9 +111,9 @@
 		},
 		{
 			"Name": "Page cycler",
-			"UUID": "com.f3nn3x.infopanel-dashboard.page-cycler",
+			"UUID": "com.f3nn3x.infopanel-studio.page-cycler",
 			"Icon": "imgs/actions/page-cycler/icon",
-			"Tooltip": "Turn the dial to move through dashboard pages (Stream Deck +).",
+			"Tooltip": "Turn the dial to move through Studio pages (Stream Deck +).",
 			"PropertyInspectorPath": "ui/page-cycler.html",
 			"UserTitleEnabled": false,
 			"Controllers": [
@@ -138,7 +138,7 @@
 		},
 		{
 			"Name": "Sensor value",
-			"UUID": "com.f3nn3x.infopanel-dashboard.sensor-value",
+			"UUID": "com.f3nn3x.infopanel-studio.sensor-value",
 			"Icon": "imgs/actions/sensor-value/icon",
 			"Tooltip": "Show a live InfoPanel sensor with warning colours and a sparkline. Optionally opens a page when pressed.",
 			"PropertyInspectorPath": "ui/sensor-value.html",

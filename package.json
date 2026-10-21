@@ -1,16 +1,16 @@
 {
-  "name": "infopanel-streamdeck-dashboard",
+  "name": "infopanel-streamdeck-studio",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "icons": "node scripts/gen-icons.mjs",
     "build": "npm run icons && rollup -c",
-    "watch": "npm run icons && rollup -c -w --watch.onEnd=\"streamdeck restart com.f3nn3x.infopanel-dashboard\"",
+    "watch": "npm run icons && rollup -c -w --watch.onEnd=\"streamdeck restart com.f3nn3x.infopanel-studio\"",
     "test": "npm run icons && vitest run",
     "typecheck": "npm run icons && tsc --noEmit",
-    "validate": "streamdeck validate com.f3nn3x.infopanel-dashboard.sdPlugin --no-update-check",
-    "pack": "streamdeck pack com.f3nn3x.infopanel-dashboard.sdPlugin"
+    "validate": "streamdeck validate com.f3nn3x.infopanel-studio.sdPlugin --no-update-check",
+    "pack": "streamdeck pack com.f3nn3x.infopanel-studio.sdPlugin"
   },
   "devDependencies": {
     "@elgato/cli": "^1.10.2",

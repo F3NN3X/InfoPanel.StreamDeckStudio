@@ -6,7 +6,7 @@ import path from "node:path";
 import url from "node:url";
 
 const isWatching = !!process.env.ROLLUP_WATCH;
-const sdPlugin = "com.f3nn3x.infopanel-dashboard.sdPlugin";
+const sdPlugin = "com.f3nn3x.infopanel-studio.sdPlugin";
 
 /**
  * @type {import('rollup').RollupOptions}

@@ -1,8 +1,8 @@
-// Dashboard theme tokens (shadcn HSL triplets such as "240 10% 3.9%") to hex colours for SVG.
+// Studio theme tokens (shadcn HSL triplets such as "240 10% 3.9%") to hex colours for SVG.
 
-import type { ThemeTokens } from "../dashboard";
+import type { ThemeTokens } from "../studio";
 
-/** The dashboard's dark default, used for any token the config does not set. */
+/** The studio's dark default, used for any token the config does not set. */
 const DEFAULT_TOKENS: ThemeTokens = {
 	background: "240 10% 3.9%",
 	foreground: "0 0% 98%",

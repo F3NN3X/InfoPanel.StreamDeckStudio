@@ -1,18 +1,18 @@
 <!doctype html>
 <html>
 	<head lang="en">
-		<title>Switch profile</title>
+		<title>Auto-rotate</title>
 		<meta charset="utf-8" />
 		<script src="sdpi-components.js"></script>
 	</head>
 
 	<body>
 		<sdpi-item label="Profile">
-			<sdpi-select setting="profile" datasource="getProfiles" loading="Loading..." placeholder="Auto (clear override)" hot-reload show-refresh></sdpi-select>
+			<sdpi-select setting="profile" datasource="getProfiles" loading="Loading..." placeholder="Shown profile" hot-reload show-refresh></sdpi-select>
 		</sdpi-item>
 		<sdpi-heading>Connection</sdpi-heading>
-		<sdpi-item label="Dashboard">
-			<sdpi-textfield setting="dashboardUrl" global placeholder="http://127.0.0.1:3922"></sdpi-textfield>
+		<sdpi-item label="Studio">
+			<sdpi-textfield setting="studioUrl" global placeholder="http://127.0.0.1:3922"></sdpi-textfield>
 		</sdpi-item>
 		<sdpi-item label="Data API">
 			<sdpi-textfield setting="dataApiUrl" global placeholder="http://127.0.0.1:3921"></sdpi-textfield>
