@@ -22,6 +22,11 @@ export function pageItems(studio: StudioClient, profile: string | undefined): Sd
 	return studio.pagesOf(studio.resolveProfile(profile)).map((p) => ({ label: p.name || p.id, value: p.id }));
 }
 
+/** The alert rules of the Studio config. */
+export function ruleItems(studio: StudioClient): SdpiItem[] {
+	return (studio.config?.alertRules ?? []).map((r) => ({ label: r.name, value: r.id }));
+}
+
 /**
  * Sensors grouped by source, filtered by a case-insensitive substring of key or name. The selected key
  * always stays in the list so the select keeps showing it.

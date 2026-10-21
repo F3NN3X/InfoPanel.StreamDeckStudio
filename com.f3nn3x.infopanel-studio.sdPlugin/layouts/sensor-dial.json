@@ -1,0 +1,10 @@
+{
+	"$schema": "https://schemas.elgato.com/streamdeck/plugins/layout.json",
+	"controller": "Encoder",
+	"id": "com.f3nn3x.infopanel-studio.sensor-dial",
+	"items": [
+		{ "key": "label", "type": "text", "rect": [12, 8, 176, 24], "font": { "size": 16, "weight": 500 }, "alignment": "left", "color": "#a1a1aa" },
+		{ "key": "value", "type": "text", "rect": [12, 32, 176, 36], "font": { "size": 28, "weight": 700 }, "alignment": "left", "color": "#ffffff" },
+		{ "key": "bar", "type": "bar", "rect": [12, 76, 176, 10], "subtype": 4, "border_w": 0, "value": 0, "bar_bg_c": "#27272a", "bar_fill_c": "#fafafa" }
+	]
+}

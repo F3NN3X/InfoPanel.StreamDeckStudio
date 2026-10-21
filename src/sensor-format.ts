@@ -1,4 +1,4 @@
-// Pure helpers for the sensor key: number formatting, threshold severity and the sparkline path.
+// Pure helpers for the sensor key: number formatting, threshold severity, the sparkline path and the bar fill.
 
 export type Severity = "normal" | "warn" | "crit";
 
@@ -43,4 +43,15 @@ export function sparklinePath(values: readonly number[], x: number, y: number, w
 			return `${i === 0 ? "M" : "L"}${px.toFixed(1)} ${py.toFixed(1)}`;
 		})
 		.join(" ");
+}
+
+/** Where the bar of a bar-style sensor tops out: the `barMax` setting, else 100 for percent and degree units. */
+export function barMaxOf(setting: unknown, unit: string | undefined): number | undefined {
+	return toNumber(setting) ?? (unit === "%" || unit?.includes("°") ? 100 : undefined);
+}
+
+/** How full a bar from 0 to `max` is, clamped to 0..1; undefined without a value or a positive max. */
+export function barFraction(value: number | undefined, max: number | undefined): number | undefined {
+	if (value === undefined || max === undefined || max <= 0) return undefined;
+	return Math.min(1, Math.max(0, value / max));
 }

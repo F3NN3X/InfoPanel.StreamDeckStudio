@@ -152,6 +152,100 @@
 					"TitleAlignment": "middle"
 				}
 			]
+		},
+		{
+			"Name": "Alerts",
+			"UUID": "com.f3nn3x.infopanel-studio.alerts",
+			"Icon": "imgs/actions/alerts/icon",
+			"Tooltip": "Count of active InfoPanel Studio alerts. Press to acknowledge the newest, hold to dismiss it.",
+			"PropertyInspectorPath": "ui/alerts.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/alerts/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Test alert",
+			"UUID": "com.f3nn3x.infopanel-studio.test-alert",
+			"Icon": "imgs/actions/test-alert/icon",
+			"Tooltip": "Fire a test alert for a chosen rule to preview how it looks.",
+			"PropertyInspectorPath": "ui/test-alert.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/test-alert/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Pause rotation",
+			"UUID": "com.f3nn3x.infopanel-studio.pause-rotation",
+			"Icon": "imgs/actions/pause-rotation/icon",
+			"Tooltip": "Hold page rotation for a while (30 s, or the rotate period) while the profile is rotating.",
+			"PropertyInspectorPath": "ui/pause-rotation.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/pause-rotation/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Coding agents",
+			"UUID": "com.f3nn3x.infopanel-studio.agents",
+			"Icon": "imgs/actions/agents/icon",
+			"Tooltip": "Show whether Claude Code or Codex sessions need you or are working. Optionally opens a page when pressed.",
+			"PropertyInspectorPath": "ui/agents.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/agents/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		},
+		{
+			"Name": "Sensor (dial)",
+			"UUID": "com.f3nn3x.infopanel-studio.sensor-dial",
+			"Icon": "imgs/actions/sensor-dial/icon",
+			"Tooltip": "Show a live InfoPanel sensor with a bar on the touch strip (Stream Deck +). Press or touch opens a page.",
+			"PropertyInspectorPath": "ui/sensor-dial.html",
+			"UserTitleEnabled": false,
+			"Controllers": [
+				"Encoder"
+			],
+			"Encoder": {
+				"layout": "layouts/sensor-dial.json",
+				"Icon": "imgs/actions/sensor-dial/icon",
+				"StackColor": "#27272a",
+				"TriggerDescription": {
+					"Push": "Open page",
+					"Touch": "Open page"
+				}
+			},
+			"States": [
+				{
+					"Image": "imgs/actions/sensor-dial/key",
+					"TitleAlignment": "middle"
+				}
+			]
 		}
 	]
 }

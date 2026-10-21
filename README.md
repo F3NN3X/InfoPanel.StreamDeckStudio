@@ -13,7 +13,12 @@ and show live InfoPanel sensors on keys. Keys are drawn in Studio's own theme co
 | Switch profile | force a profile on the kiosks; "Auto" clears the override | profile name, filled while forced |
 | Auto-rotate | toggle rotation; hold 1 s = back to the saved setting | play / pause, `saved: on/off` while overridden, dimmed with fewer than 2 pages |
 | Page cycler (Stream Deck +) | dial: rotate = next / previous page, press = first page, touch = toggle rotation | touch strip: icon, page name, position bar `n / total`, rotating mark |
-| Sensor value | open a page (optional) | label, live value + unit, warn / critical colours, sparkline (repaints at most 4x per second) |
+| Sensor value | open a page (optional) | label, live value + unit, warn / critical colours, sparkline or, with Style = Bar, a fill bar from 0 to Bar max (100 for % and ° units; no max falls back to the sparkline); repaints at most 4x per second |
+| Sensor (dial) (Stream Deck +) | dial press or touch: open a page (optional) | touch strip: label, value + unit and a bar in the warn / critical colours; "Offline" only when there is neither a reading nor Studio; the same settings as Sensor value, minus Style |
+| Alerts | press = acknowledge the newest alert, hold 1 s = dismiss it | bell + count of visible alerts, filled by the worst severity (critical / warning / info) with the newest alert's name; "No alerts" when quiet |
+| Test alert | fire the chosen rule's test alert | flask tinted by the rule's severity + rule name |
+| Pause rotation | hold page rotation for 30 s (or the rotate period); alerts when the profile is not rotating | hourglass, "Pause 30 s" (longer for a slow rotate period) while rotating, muted "Not rotating" otherwise |
+| Coding agents | open a page (optional) | Claude Code / Codex sessions (filter: both, Claude or Codex): amber with the project when one waits for you ("N waiting" for several), the working count, else "Idle" |
 
 When Studio cannot be reached the keys show a muted "Offline" face, a press shows the alert, and they recover
 on their own when it is back. Page keys show the active fill instead of the OK tick; switch-profile and auto-rotate

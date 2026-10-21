@@ -1,7 +1,8 @@
-// Touch-strip feedback for the page cycler (layouts/page-cycler.json: icon, name, bar, pos, mark).
+// Touch-strip feedback for the page cycler (layouts/page-cycler.json: icon, name, bar, pos, mark) and the sensor dial.
 
 import type { FeedbackPayload } from "@elgato/streamdeck";
 import type { ThemeTokens } from "../studio";
+import type { Severity } from "../sensor-format";
 import { palette } from "./color";
 import { iconSvg, svgDataUrl } from "./icons";
 import { truncate } from "./text";
@@ -44,4 +45,30 @@ export function stepTarget(pageIds: readonly string[], current: string | undefin
 	if (pageIds.length === 0) return undefined;
 	const at = Math.max(0, current ? pageIds.indexOf(current) : 0);
 	return pageIds[(((at + ticks) % pageIds.length) + pageIds.length) % pageIds.length];
+}
+
+export interface SensorStripInput {
+	theme: ThemeTokens;
+	offline: boolean;
+	label: string;
+	/** Formatted value, or undefined while no reading has arrived. */
+	value?: string;
+	unit?: string;
+	severity: Severity;
+	/** How full the bar is (0..1); undefined draws it empty. */
+	bar?: number;
+}
+
+/** Feedback for layouts/sensor-dial.json: label, value + unit, bar. */
+export function sensorFeedback(input: SensorStripInput): FeedbackPayload {
+	const p = palette(input.theme);
+	if (input.offline) {
+		return { label: { value: "Offline", color: p.mutedFg }, value: { value: "", color: p.mutedFg }, bar: { value: 0, bar_fill_c: p.muted } };
+	}
+	const color = input.severity === "crit" ? p.destructive : input.severity === "warn" ? p.warn : p.primary;
+	return {
+		label: { value: truncate(input.label, 24), color: p.mutedFg },
+		value: { value: input.value === undefined ? "—" : `${input.value}${input.unit ? ` ${input.unit}` : ""}`, color: input.value === undefined ? p.mutedFg : color },
+		bar: { value: Math.round((input.bar ?? 0) * 100), bar_fill_c: color },
+	};
 }

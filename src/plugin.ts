@@ -1,11 +1,16 @@
 import streamDeck from "@elgato/streamdeck";
 
+import { Agents } from "./actions/agents";
+import { Alerts } from "./actions/alerts";
 import { AutoRotate } from "./actions/auto-rotate";
 import { GoToPage } from "./actions/go-to-page";
 import { PageCycler } from "./actions/page-cycler";
+import { PauseRotation } from "./actions/pause-rotation";
+import { SensorDial } from "./actions/sensor-dial";
 import { SensorValue } from "./actions/sensor-value";
 import { NextPage, PrevPage } from "./actions/step-page";
 import { SwitchProfile } from "./actions/switch-profile";
+import { TestAlert } from "./actions/test-alert";
 import { applyConnection, type ConnectionSettings } from "./runtime";
 
 streamDeck.logger.setLevel("info");
@@ -17,6 +22,11 @@ streamDeck.actions.registerAction(new SwitchProfile());
 streamDeck.actions.registerAction(new AutoRotate());
 streamDeck.actions.registerAction(new PageCycler());
 streamDeck.actions.registerAction(new SensorValue());
+streamDeck.actions.registerAction(new SensorDial());
+streamDeck.actions.registerAction(new Alerts());
+streamDeck.actions.registerAction(new TestAlert());
+streamDeck.actions.registerAction(new PauseRotation());
+streamDeck.actions.registerAction(new Agents());
 
 // Server addresses live in the global settings, edited in every action's property inspector.
 streamDeck.settings.onDidReceiveGlobalSettings<ConnectionSettings>((ev) => applyConnection(ev.settings));
