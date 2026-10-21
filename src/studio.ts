@@ -1,4 +1,4 @@
-// The shared client for the InfoPanel dashboard server: config snapshot, control state (live over
+// The shared client for the InfoPanel studio server: config snapshot, control state (live over
 // SSE), POST helpers and the profile/page resolution the server uses. Opened by the first visible
 // action and closed when none is left.
 
@@ -21,7 +21,7 @@ export interface ProfileInfo {
 	rotate?: { enabled?: boolean; seconds?: number; pages?: string[] };
 }
 
-export interface DashboardConfig {
+export interface StudioConfig {
 	version: number;
 	activeProfile?: string;
 	theme: ThemeTokens;
@@ -40,7 +40,7 @@ export interface ControlState {
 	profiles: Record<string, ProfileControl>;
 }
 
-export interface DashboardClientOptions {
+export interface StudioClientOptions {
 	getBaseUrl: () => string;
 	fetch?: typeof fetch;
 	connect?: SseConnector;
@@ -51,7 +51,7 @@ const REQUEST_TIMEOUT_MS = 5000;
 const asObject = (value: unknown): Record<string, unknown> | undefined =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 
-const parseConfig = (raw: unknown): DashboardConfig | undefined => {
+const parseConfig = (raw: unknown): StudioConfig | undefined => {
 	const obj = asObject(raw);
 	if (!obj || !Array.isArray(obj.profiles)) return undefined;
 	return {
@@ -75,8 +75,8 @@ const parseControl = (raw: unknown): ControlState | undefined => {
 	};
 };
 
-export class DashboardClient {
-	config: DashboardConfig | null = null;
+export class StudioClient {
+	config: StudioConfig | null = null;
 	control: ControlState | null = null;
 	/** The control stream is open. */
 	online = false;
@@ -89,7 +89,7 @@ export class DashboardClient {
 	private refs = 0;
 	private generation = 0;
 
-	constructor(options: DashboardClientOptions) {
+	constructor(options: StudioClientOptions) {
 		this.getBaseUrl = options.getBaseUrl;
 		this.doFetch = options.fetch ?? fetch;
 		this.connect = options.connect ?? connectSse;
@@ -263,7 +263,7 @@ export class DashboardClient {
 		return config.profiles[0]?.id ?? null;
 	}
 
-	/** Dashboard theme with the profile's overrides on top. */
+	/** Studio theme with the profile's overrides on top. */
 	effectiveTheme(profileId?: string | null): ThemeTokens {
 		return { ...(this.config?.theme ?? {}), ...(this.profileById(profileId)?.theme ?? {}) } as ThemeTokens;
 	}

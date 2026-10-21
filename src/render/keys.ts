@@ -1,6 +1,6 @@
 // Pure renderers for the page-control keys: theme in, 144x144 SVG string out.
 
-import type { ThemeTokens } from "../dashboard";
+import type { ThemeTokens } from "../studio";
 import { palette, type Palette } from "./color";
 import { glyph } from "./icons";
 import { fit, textEl, wrap } from "./text";
@@ -21,7 +21,7 @@ function caption(name: string, color: string, y = 120): string {
 	return textEl(f.text, { x: 72, y, size: f.size, fill: color });
 }
 
-/** The dashboard cannot be reached. */
+/** The studio cannot be reached. */
 export function offlineKey(theme: ThemeTokens = {}): string {
 	const p = palette(theme);
 	return frame(p.muted, glyph("wifi-off", 42, 22, 60, p.mutedFg) + textEl("Offline", { x: 72, y: 120, size: 22, fill: p.mutedFg }));

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pageItems, profileItems, sensorItems } from "./actions/datasource";
-import { DashboardClient, type DashboardConfig } from "./dashboard";
+import { StudioClient, type StudioConfig } from "./studio";
 import { formatValue, severity, sparklinePath, toNumber } from "./sensor-format";
 import { fakeConnector, fakeFetch, json } from "./test-utils";
 import { throttle } from "./throttle";
@@ -103,7 +103,7 @@ describe("throttle", () => {
 });
 
 describe("datasource items", () => {
-	const config: DashboardConfig = {
+	const config: StudioConfig = {
 		version: 3,
 		activeProfile: "a",
 		theme: {},
@@ -112,23 +112,23 @@ describe("datasource items", () => {
 			{ id: "b", name: "Beta", pages: [{ id: "q1", name: "Only" }] },
 		],
 	};
-	const dashboard = new DashboardClient({ getBaseUrl: () => "http://x", fetch: fakeFetch({ "/api/config": () => json(config) }).fetch, connect: fakeConnector().connect });
+	const studio = new StudioClient({ getBaseUrl: () => "http://x", fetch: fakeFetch({ "/api/config": () => json(config) }).fetch, connect: fakeConnector().connect });
 
 	it("lists profiles with the shown / auto lead entry", async () => {
-		await dashboard.refetchConfig();
-		expect(profileItems(dashboard, "shown")).toEqual([
+		await studio.refetchConfig();
+		expect(profileItems(studio, "shown")).toEqual([
 			{ label: "Shown profile", value: "" },
 			{ label: "Alpha", value: "a" },
 			{ label: "Beta", value: "b" },
 		]);
-		expect(profileItems(dashboard, "auto")[0]).toEqual({ label: "Auto (clear override)", value: "" });
-		expect(profileItems(dashboard, null)).toHaveLength(2);
+		expect(profileItems(studio, "auto")[0]).toEqual({ label: "Auto (clear override)", value: "" });
+		expect(profileItems(studio, null)).toHaveLength(2);
 	});
 
 	it("lists the pages of the chosen profile, or the resolved one when blank", () => {
-		expect(pageItems(dashboard, "b")).toEqual([{ label: "Only", value: "q1" }]);
-		expect(pageItems(dashboard, undefined).map((i) => i.value)).toEqual(["p1", "p2"]);
-		expect(pageItems(dashboard, "a")[1]).toEqual({ label: "p2", value: "p2" });
+		expect(pageItems(studio, "b")).toEqual([{ label: "Only", value: "q1" }]);
+		expect(pageItems(studio, undefined).map((i) => i.value)).toEqual(["p1", "p2"]);
+		expect(pageItems(studio, "a")[1]).toEqual({ label: "p2", value: "p2" });
 	});
 
 	it("groups sensors by source and filters by key or name, keeping the selected one", () => {

@@ -1,6 +1,6 @@
 // Pure renderer for the sensor key: label, value, unit and a sparkline on a themed background.
 
-import type { ThemeTokens } from "../dashboard";
+import type { ThemeTokens } from "../studio";
 import { sparklinePath, type Severity } from "../sensor-format";
 import { palette } from "./color";
 import { escapeXml, fit, FONT, textEl } from "./text";

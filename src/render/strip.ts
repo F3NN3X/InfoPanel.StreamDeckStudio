@@ -1,7 +1,7 @@
 // Touch-strip feedback for the page cycler (layouts/page-cycler.json: icon, name, bar, pos, mark).
 
 import type { FeedbackPayload } from "@elgato/streamdeck";
-import type { ThemeTokens } from "../dashboard";
+import type { ThemeTokens } from "../studio";
 import { palette } from "./color";
 import { iconSvg, svgDataUrl } from "./icons";
 import { truncate } from "./text";

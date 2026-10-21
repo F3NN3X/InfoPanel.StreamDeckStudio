@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schemas.elgato.com/streamdeck/plugins/layout.json",
 	"controller": "Encoder",
-	"id": "com.f3nn3x.infopanel-dashboard.page-cycler",
+	"id": "com.f3nn3x.infopanel-studio.page-cycler",
 	"items": [
 		{ "key": "icon", "type": "pixmap", "rect": [12, 10, 36, 36] },
 		{ "key": "name", "type": "text", "rect": [58, 10, 134, 36], "font": { "size": 22, "weight": 700 }, "alignment": "left", "color": "#ffffff" },

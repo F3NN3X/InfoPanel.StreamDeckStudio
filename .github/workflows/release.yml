@@ -40,7 +40,7 @@ jobs:
       shell: pwsh
       run: |
         $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-        $manifest = Get-Content "com.f3nn3x.infopanel-dashboard.sdPlugin/manifest.json" -Raw | ConvertFrom-Json
+        $manifest = Get-Content "com.f3nn3x.infopanel-studio.sdPlugin/manifest.json" -Raw | ConvertFrom-Json
         echo "package.json version: '$version', manifest Version: '$($manifest.Version)'"
         if ([string]::IsNullOrWhiteSpace($version)) {
             Write-Error "Could not find version in package.json"
@@ -71,8 +71,8 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: com.f3nn3x.infopanel-dashboard-v${{ steps.get_version.outputs.VERSION }}
-        path: com.f3nn3x.infopanel-dashboard.streamDeckPlugin
+        name: com.f3nn3x.infopanel-studio-v${{ steps.get_version.outputs.VERSION }}
+        path: com.f3nn3x.infopanel-studio.streamDeckPlugin
 
     - name: Get Current Date
       id: get_date
@@ -96,7 +96,7 @@ jobs:
             }
         }
         $body = ($notes -join "`n").Trim()
-        if ([string]::IsNullOrWhiteSpace($body)) { $body = "InfoPanel Dashboard Stream Deck plugin v$version. Open the .streamDeckPlugin file to install." }
+        if ([string]::IsNullOrWhiteSpace($body)) { $body = "InfoPanel Studio Stream Deck plugin v$version. Open the .streamDeckPlugin file to install." }
         Set-Content -Path "release_notes.md" -Value $body
         echo "NOTES_PATH=release_notes.md" >> $env:GITHUB_OUTPUT
 
@@ -104,7 +104,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: com.f3nn3x.infopanel-dashboard.streamDeckPlugin
+        files: com.f3nn3x.infopanel-studio.streamDeckPlugin
         body_path: ${{ steps.extract_release_notes.outputs.NOTES_PATH }}
         name: "v${{ steps.get_version.outputs.VERSION }} - ${{ steps.get_date.outputs.DATE }}"
         draft: false

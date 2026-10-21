@@ -1,9 +1,9 @@
-// Base for the page-control keys: follows the shared dashboard client, draws the offline face when
+// Base for the page-control keys: follows the shared studio client, draws the offline face when
 // it cannot be reached, and answers the property inspector's profile and page selects.
 
 import streamDeck, { type SendToPluginEvent } from "@elgato/streamdeck";
 import type { JsonObject, JsonValue } from "@elgato/utils";
-import type { ThemeTokens } from "../dashboard";
+import type { ThemeTokens } from "../studio";
 import { offlineKey } from "../render/keys";
 import { runtime, type Deps } from "../runtime";
 import { eventOf, pageItems, profileItems } from "./datasource";
@@ -11,7 +11,7 @@ import { PaintedKey, type Entry, type View } from "./painted-key";
 
 export type ProfileSettings = { profile?: string } & JsonObject;
 
-export abstract class DashboardKey<S extends ProfileSettings, I extends { theme: ThemeTokens }> extends PaintedKey<S> {
+export abstract class StudioKey<S extends ProfileSettings, I extends { theme: ThemeTokens }> extends PaintedKey<S> {
 	private unsubscribe: (() => void) | undefined;
 
 	constructor(protected readonly deps: Deps = runtime) {
@@ -25,10 +25,10 @@ export abstract class DashboardKey<S extends ProfileSettings, I extends { theme:
 	protected profileLead: "shown" | "auto" = "shown";
 
 	protected view(settings: S): View {
-		const { dashboard } = this.deps;
-		const profile = dashboard.resolveProfile(settings.profile || undefined);
-		if (!dashboard.online) {
-			const theme = dashboard.effectiveTheme(profile);
+		const { studio } = this.deps;
+		const profile = studio.resolveProfile(settings.profile || undefined);
+		if (!studio.online) {
+			const theme = studio.effectiveTheme(profile);
 			return { key: `offline:${JSON.stringify(theme)}`, svg: () => offlineKey(theme) };
 		}
 		const input = this.input(settings, profile);
@@ -36,12 +36,12 @@ export abstract class DashboardKey<S extends ProfileSettings, I extends { theme:
 	}
 
 	protected override appeared(_entry: Entry<S>): void {
-		this.deps.dashboard.start();
-		this.unsubscribe ??= this.deps.dashboard.subscribe(() => this.paintAll());
+		this.deps.studio.start();
+		this.unsubscribe ??= this.deps.studio.subscribe(() => this.paintAll());
 	}
 
 	protected override disappeared(_entry: Entry<S>): void {
-		this.deps.dashboard.stop();
+		this.deps.studio.stop();
 		if (this.entries.size === 0) {
 			this.unsubscribe?.();
 			this.unsubscribe = undefined;
@@ -54,11 +54,11 @@ export abstract class DashboardKey<S extends ProfileSettings, I extends { theme:
 	}
 
 	protected async sendProfiles(): Promise<void> {
-		await streamDeck.ui.sendToPropertyInspector({ event: "getProfiles", items: profileItems(this.deps.dashboard, this.profileLead) });
+		await streamDeck.ui.sendToPropertyInspector({ event: "getProfiles", items: profileItems(this.deps.studio, this.profileLead) });
 	}
 
 	protected async sendPages(profile: string | undefined): Promise<void> {
-		await streamDeck.ui.sendToPropertyInspector({ event: "getPages", items: pageItems(this.deps.dashboard, profile) });
+		await streamDeck.ui.sendToPropertyInspector({ event: "getPages", items: pageItems(this.deps.studio, profile) });
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, S>): Promise<void> {

@@ -15,7 +15,7 @@ import { cyclerFeedback, stepTarget } from "../render/strip";
 import { runtime, type Deps } from "../runtime";
 import { throttle, type Throttle } from "../throttle";
 import { eventOf, profileItems } from "./datasource";
-import type { ProfileSettings } from "./dashboard-key";
+import type { ProfileSettings } from "./studio-key";
 
 /** Rotation ticks arriving within this window are summed into one page change. */
 export const ROTATE_THROTTLE_MS = 120;
@@ -29,7 +29,7 @@ interface Entry {
 }
 
 /** Stream Deck + dial: rotate = next/previous page, press = first page, touch = toggle auto-rotate. */
-@action({ UUID: "com.f3nn3x.infopanel-dashboard.page-cycler" })
+@action({ UUID: "com.f3nn3x.infopanel-studio.page-cycler" })
 export class PageCycler extends SingletonAction<ProfileSettings> {
 	private readonly entries = new Map<string, Entry>();
 	private unsubscribe: (() => void) | undefined;
@@ -39,22 +39,22 @@ export class PageCycler extends SingletonAction<ProfileSettings> {
 	}
 
 	private profileOf(entry: Entry): string | null {
-		return this.deps.dashboard.resolveProfile(entry.settings.profile || undefined);
+		return this.deps.studio.resolveProfile(entry.settings.profile || undefined);
 	}
 
 	private paint(entry: Entry): void {
-		const { dashboard } = this.deps;
+		const { studio } = this.deps;
 		const profile = this.profileOf(entry);
-		const pages = dashboard.pagesOf(profile);
-		const page = dashboard.pageOf(profile);
+		const pages = studio.pagesOf(profile);
+		const page = studio.pageOf(profile);
 		const feedback = cyclerFeedback({
-			theme: dashboard.effectiveTheme(profile),
-			offline: !dashboard.online,
+			theme: studio.effectiveTheme(profile),
+			offline: !studio.online,
 			pageName: page?.name,
 			icon: page?.icon,
 			index: page ? pages.indexOf(page) + 1 : 1,
 			total: pages.length,
-			rotating: !!profile && dashboard.control?.profiles[profile]?.rotating === true,
+			rotating: !!profile && studio.control?.profiles[profile]?.rotating === true,
 		});
 		const key = JSON.stringify(feedback);
 		if (entry.painted === key) return;
@@ -70,8 +70,8 @@ export class PageCycler extends SingletonAction<ProfileSettings> {
 		if (!ev.action.isDial()) return;
 		const entry: Entry = { action: ev.action, settings: ev.payload.settings, ticks: 0, gate: throttle(ROTATE_THROTTLE_MS) };
 		this.entries.set(ev.action.id, entry);
-		this.deps.dashboard.start();
-		this.unsubscribe ??= this.deps.dashboard.subscribe(() => this.paintAll());
+		this.deps.studio.start();
+		this.unsubscribe ??= this.deps.studio.subscribe(() => this.paintAll());
 		this.paint(entry);
 	}
 
@@ -80,7 +80,7 @@ export class PageCycler extends SingletonAction<ProfileSettings> {
 		if (!entry) return;
 		entry.gate.cancel();
 		this.entries.delete(ev.action.id);
-		this.deps.dashboard.stop();
+		this.deps.studio.stop();
 		if (this.entries.size === 0) {
 			this.unsubscribe?.();
 			this.unsubscribe = undefined;
@@ -105,30 +105,30 @@ export class PageCycler extends SingletonAction<ProfileSettings> {
 		const ticks = entry.ticks;
 		entry.ticks = 0;
 		if (ticks === 0) return;
-		const { dashboard } = this.deps;
+		const { studio } = this.deps;
 		const profile = this.profileOf(entry);
 		const target = stepTarget(
-			dashboard.pagesOf(profile).map((p) => p.id),
-			dashboard.pageOf(profile)?.id,
+			studio.pagesOf(profile).map((p) => p.id),
+			studio.pageOf(profile)?.id,
 			ticks,
 		);
-		if (!dashboard.online || !target || !(await dashboard.postPage(entry.settings.profile || undefined, target))) await entry.action.showAlert();
+		if (!studio.online || !target || !(await studio.postPage(entry.settings.profile || undefined, target))) await entry.action.showAlert();
 	}
 
 	override async onDialDown(ev: DialDownEvent<ProfileSettings>): Promise<void> {
-		const { dashboard } = this.deps;
-		const first = dashboard.pagesOf(dashboard.resolveProfile(ev.payload.settings.profile || undefined))[0];
-		if (!dashboard.online || !first || !(await dashboard.postPage(ev.payload.settings.profile || undefined, first.id))) await ev.action.showAlert();
+		const { studio } = this.deps;
+		const first = studio.pagesOf(studio.resolveProfile(ev.payload.settings.profile || undefined))[0];
+		if (!studio.online || !first || !(await studio.postPage(ev.payload.settings.profile || undefined, first.id))) await ev.action.showAlert();
 	}
 
 	override async onTouchTap(ev: TouchTapEvent<ProfileSettings>): Promise<void> {
-		const { dashboard } = this.deps;
-		if (!dashboard.online || !(await dashboard.postRotate(ev.payload.settings.profile || undefined, "toggle"))) await ev.action.showAlert();
+		const { studio } = this.deps;
+		if (!studio.online || !(await studio.postRotate(ev.payload.settings.profile || undefined, "toggle"))) await ev.action.showAlert();
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, ProfileSettings>): Promise<void> {
 		if (eventOf(ev.payload) === "getProfiles") {
-			await streamDeck.ui.sendToPropertyInspector({ event: "getProfiles", items: profileItems(this.deps.dashboard, "shown") });
+			await streamDeck.ui.sendToPropertyInspector({ event: "getProfiles", items: profileItems(this.deps.studio, "shown") });
 		}
 	}
 }

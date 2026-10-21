@@ -40,7 +40,7 @@ describe("text", () => {
 		const mid = fit("Performance", 128, 24, 14);
 		expect(mid.size).toBeLessThan(24);
 		expect(mid.text).toBe("Performance");
-		const long = fit("An extremely long dashboard page name", 128, 24, 14);
+		const long = fit("An extremely long studio page name", 128, 24, 14);
 		expect(long.size).toBe(14);
 		expect(long.text.endsWith("…")).toBe(true);
 	});

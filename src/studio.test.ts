@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { DashboardClient, type DashboardConfig, type ControlState } from "./dashboard";
+import { StudioClient, type StudioConfig, type ControlState } from "./studio";
 import { fakeConnector, fakeFetch, flush, json } from "./test-utils";
 
-const config: DashboardConfig = {
+const config: StudioConfig = {
 	version: 3,
 	activeProfile: "strip",
 	theme: { background: "240 10% 3.9%", primary: "0 0% 98%" },
@@ -36,7 +36,7 @@ function setup(routes: Record<string, () => Response> = {}) {
 		...routes,
 	});
 	const c = fakeConnector();
-	const client = new DashboardClient({ getBaseUrl: () => "http://dash:3922/", fetch: f.fetch, connect: c.connect });
+	const client = new StudioClient({ getBaseUrl: () => "http://dash:3922/", fetch: f.fetch, connect: c.connect });
 	return { client, f, c };
 }
 
@@ -76,7 +76,7 @@ describe("ref-counted start/stop", () => {
 	it("reopens against a changed base URL", () => {
 		let base = "http://a";
 		const c = fakeConnector();
-		const client = new DashboardClient({ getBaseUrl: () => base, fetch: fakeFetch({}).fetch, connect: c.connect });
+		const client = new StudioClient({ getBaseUrl: () => base, fetch: fakeFetch({}).fetch, connect: c.connect });
 		client.start();
 		base = "http://b";
 		client.reconnect();
@@ -178,7 +178,7 @@ describe("POST helpers", () => {
 		expect(await client.postPage("main", "nope")).toBeNull();
 		const bad = setup({ "/api/control/page": () => json({ weird: true }) });
 		expect(await bad.client.postPage("main", "p1")).toBeNull();
-		const down = new DashboardClient({
+		const down = new StudioClient({
 			getBaseUrl: () => "http://x",
 			fetch: (async () => {
 				throw new Error("ECONNREFUSED");
@@ -216,7 +216,7 @@ describe("resolution helpers", () => {
 		expect(client.resolveProfile()).toBeNull();
 	});
 
-	it("merges the profile theme over the dashboard theme", async () => {
+	it("merges the profile theme over the studio theme", async () => {
 		const client = await loaded();
 		expect(client.effectiveTheme("main")).toEqual({ background: "240 10% 3.9%", primary: "10 80% 50%" });
 		expect(client.effectiveTheme("strip")).toEqual(config.theme);

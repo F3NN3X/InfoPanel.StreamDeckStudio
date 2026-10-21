@@ -1,7 +1,7 @@
 // Items for the property inspectors' sdpi-select datasources (`{ event, items }` replies).
 
 import type { JsonObject } from "@elgato/utils";
-import type { DashboardClient } from "../dashboard";
+import type { StudioClient } from "../studio";
 import type { SensorInfo } from "../data-api";
 
 export type SdpiItem = { label: string; value: string; disabled?: boolean };
@@ -10,16 +10,16 @@ export type SdpiGroup = { label: string; children: SdpiItem[] };
 export const SHOWN = "";
 
 /** Profiles, led by the "shown" entry (page keys) or "Auto" (switch-profile). */
-export function profileItems(dashboard: DashboardClient, lead: "shown" | "auto" | null): SdpiItem[] {
-	const items = (dashboard.config?.profiles ?? []).map((p) => ({ label: p.name || p.id, value: p.id }));
+export function profileItems(studio: StudioClient, lead: "shown" | "auto" | null): SdpiItem[] {
+	const items = (studio.config?.profiles ?? []).map((p) => ({ label: p.name || p.id, value: p.id }));
 	if (lead === "shown") return [{ label: "Shown profile", value: SHOWN }, ...items];
 	if (lead === "auto") return [{ label: "Auto (clear override)", value: SHOWN }, ...items];
 	return items;
 }
 
 /** Pages of the chosen profile (the shown one when blank). */
-export function pageItems(dashboard: DashboardClient, profile: string | undefined): SdpiItem[] {
-	return dashboard.pagesOf(dashboard.resolveProfile(profile)).map((p) => ({ label: p.name || p.id, value: p.id }));
+export function pageItems(studio: StudioClient, profile: string | undefined): SdpiItem[] {
+	return studio.pagesOf(studio.resolveProfile(profile)).map((p) => ({ label: p.name || p.id, value: p.id }));
 }
 
 /**

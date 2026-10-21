@@ -1,7 +1,7 @@
 import { action, type DidReceiveSettingsEvent, type KeyDownEvent } from "@elgato/streamdeck";
-import type { ThemeTokens } from "../dashboard";
+import type { ThemeTokens } from "../studio";
 import { pageKey } from "../render/keys";
-import { DashboardKey, type ProfileSettings } from "./dashboard-key";
+import { StudioKey, type ProfileSettings } from "./studio-key";
 
 export type GoToPageSettings = { page?: string } & ProfileSettings;
 
@@ -12,16 +12,16 @@ interface Input {
 	active: boolean;
 }
 
-@action({ UUID: "com.f3nn3x.infopanel-dashboard.go-to-page" })
-export class GoToPage extends DashboardKey<GoToPageSettings, Input> {
+@action({ UUID: "com.f3nn3x.infopanel-studio.go-to-page" })
+export class GoToPage extends StudioKey<GoToPageSettings, Input> {
 	protected input(settings: GoToPageSettings, profile: string | null): Input {
-		const { dashboard } = this.deps;
-		const page = dashboard.pagesOf(profile).find((p) => p.id === settings.page);
+		const { studio } = this.deps;
+		const page = studio.pagesOf(profile).find((p) => p.id === settings.page);
 		return {
-			theme: dashboard.effectiveTheme(profile),
+			theme: studio.effectiveTheme(profile),
 			icon: page?.icon,
 			name: page?.name ?? (settings.page ? settings.page : "Pick a page"),
-			active: !!settings.page && !!profile && dashboard.control?.profiles[profile]?.page === settings.page,
+			active: !!settings.page && !!profile && studio.control?.profiles[profile]?.page === settings.page,
 		};
 	}
 
@@ -31,8 +31,8 @@ export class GoToPage extends DashboardKey<GoToPageSettings, Input> {
 
 	override async onKeyDown(ev: KeyDownEvent<GoToPageSettings>): Promise<void> {
 		const { page, profile } = ev.payload.settings;
-		if (!page || !this.deps.dashboard.online) return ev.action.showAlert();
-		if (!(await this.deps.dashboard.postPage(profile || undefined, page))) await ev.action.showAlert();
+		if (!page || !this.deps.studio.online) return ev.action.showAlert();
+		if (!(await this.deps.studio.postPage(profile || undefined, page))) await ev.action.showAlert();
 	}
 
 	// The page select follows the chosen profile.

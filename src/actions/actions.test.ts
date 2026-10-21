@@ -10,7 +10,7 @@ vi.mock("@elgato/streamdeck", () => {
 });
 
 import streamDeck from "@elgato/streamdeck";
-import { DashboardClient, type ControlState, type DashboardConfig } from "../dashboard";
+import { StudioClient, type ControlState, type StudioConfig } from "../studio";
 import { DataApi } from "../data-api";
 import type { Deps } from "../runtime";
 import { palette } from "../render/color";
@@ -22,7 +22,7 @@ import { REPAINT_MS, SensorValue } from "./sensor-value";
 import { NextPage, PrevPage } from "./step-page";
 import { SwitchProfile } from "./switch-profile";
 
-const config: DashboardConfig = {
+const config: StudioConfig = {
 	version: 3,
 	activeProfile: "main",
 	theme: { primary: "200 80% 50%" },
@@ -53,7 +53,7 @@ const control = (patch: Partial<ControlState> = {}): ControlState => ({
 	...patch,
 });
 
-/** A dashboard client that is online with the config and control state loaded. */
+/** A studio client that is online with the config and control state loaded. */
 async function onlineDeps(state: ControlState = control()) {
 	const posts: { path: string; body: unknown }[] = [];
 	let reply: Response | (() => Response) = json(state);
@@ -69,11 +69,11 @@ async function onlineDeps(state: ControlState = control()) {
 		return typeof reply === "function" ? reply() : reply.clone();
 	}
 	const c = fakeConnector();
-	const dashboard = new DashboardClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect });
+	const studio = new StudioClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect });
 	const dataApi = new DataApi({ getBaseUrl: () => "http://s", fetch: f.fetch, connect: c.connect });
-	await dashboard.refetchConfig();
-	dashboard.control = state;
-	const deps: Deps = { dashboard, dataApi };
+	await studio.refetchConfig();
+	studio.control = state;
+	const deps: Deps = { studio, dataApi };
 	return {
 		deps,
 		posts,
@@ -81,10 +81,10 @@ async function onlineDeps(state: ControlState = control()) {
 		goOnline: () => {
 			const stream = c.find("/events/control");
 			if (stream) stream.options.onOpen!();
-			else dashboard.online = true; // nothing started yet: pretend the stream was open already
+			else studio.online = true; // nothing started yet: pretend the stream was open already
 		},
 		failPosts: () => (reply = new Response("bad", { status: 400 })),
-		dashboard,
+		studio,
 		dataApi,
 	};
 }
@@ -125,21 +125,21 @@ describe("go to page", () => {
 		const key = new GoToPage(t.deps);
 		const a = keyAction();
 		appear({ action: a, settings: { page: "p2" } }, key);
-		expect(t.dashboard.online).toBe(true);
+		expect(t.studio.online).toBe(true);
 		expect(a.setImage).toHaveBeenCalledTimes(1);
 		const svg = decode(a.setImage.mock.calls[0]!);
 		expect(svg).toContain(">Gaming</text>");
 		expect(svg).toContain(`<rect width="144" height="144" fill="${P.primary}"/>`); // filled: p2 is the active page
 
 		// a notification with identical inputs must not reach the key
-		t.dashboard.control = control();
-		t.dashboard.subscribe(() => {});
-		(t.dashboard as unknown as { notify: () => void }).notify();
+		t.studio.control = control();
+		t.studio.subscribe(() => {});
+		(t.studio as unknown as { notify: () => void }).notify();
 		expect(a.setImage).toHaveBeenCalledTimes(1);
 
 		// another page becomes active: the face changes
-		t.dashboard.control = control({ profiles: { main: { page: "p1", rotating: false, override: null }, solo: { page: "s1", rotating: false, override: null } } });
-		(t.dashboard as unknown as { notify: () => void }).notify();
+		t.studio.control = control({ profiles: { main: { page: "p1", rotating: false, override: null }, solo: { page: "s1", rotating: false, override: null } } });
+		(t.studio as unknown as { notify: () => void }).notify();
 		expect(a.setImage).toHaveBeenCalledTimes(2);
 		expect(decode(a.setImage.mock.calls[1]!)).not.toBe(svg);
 	});
@@ -174,7 +174,7 @@ describe("go to page", () => {
 		expect(a.showAlert).toHaveBeenCalledTimes(2);
 	});
 
-	it("shows the offline face while the dashboard is unreachable, then recovers", async () => {
+	it("shows the offline face while the studio is unreachable, then recovers", async () => {
 		const t = await onlineDeps();
 		const key = new GoToPage(t.deps);
 		const a = keyAction();
@@ -279,8 +279,8 @@ describe("switch profile", () => {
 		appear({ action: auto, settings: { profile: "" } }, key);
 		const fills = (a: ReturnType<typeof keyAction>) => decode(a.setImage.mock.calls[0]!).match(/<rect[^>]*fill="(#[0-9a-f]{6})"/)![1];
 		expect(fills(solo)).not.toBe(fills(auto));
-		t.dashboard.control = control({ profile: null });
-		(t.dashboard as unknown as { notify: () => void }).notify();
+		t.studio.control = control({ profile: null });
+		(t.studio as unknown as { notify: () => void }).notify();
 		expect(fills(solo)).not.toBe(decode(solo.setImage.mock.calls[1]!).match(/<rect[^>]*fill="(#[0-9a-f]{6})"/)![1]);
 	});
 });
@@ -350,7 +350,7 @@ describe("page cycler", () => {
 		dial.onDialRotate({ action: a, payload: { ticks: 1, settings: {} } } as never); // first tick goes at once: p2 -> p3
 		await vi.advanceTimersByTimeAsync(0);
 		expect(t.posts).toEqual([{ path: "page", body: { page: "p3" } }]);
-		t.dashboard.control = control({ profiles: { main: { page: "p3", rotating: false, override: null }, solo: { page: "s1", rotating: false, override: null } } });
+		t.studio.control = control({ profiles: { main: { page: "p3", rotating: false, override: null }, solo: { page: "s1", rotating: false, override: null } } });
 		for (const ticks of [1, 1, 1, -1]) dial.onDialRotate({ action: a, payload: { ticks, settings: {} } } as never);
 		await vi.advanceTimersByTimeAsync(ROTATE_THROTTLE_MS);
 		expect(t.posts).toHaveLength(2);
@@ -396,7 +396,7 @@ describe("page cycler", () => {
 		appear({ action: a, settings: {} }, dial);
 		expect(a.setFeedback).toHaveBeenCalledTimes(1);
 		expect(a.setFeedback.mock.calls[0]![0]).toMatchObject({ name: { value: "Gaming" }, pos: { value: "2 / 3" } });
-		(t.dashboard as unknown as { notify: () => void }).notify();
+		(t.studio as unknown as { notify: () => void }).notify();
 		expect(a.setFeedback).toHaveBeenCalledTimes(1);
 	});
 
@@ -490,8 +490,8 @@ describe("sensor value", () => {
 				}),
 		});
 		const c = fakeConnector();
-		const dashboard = new DashboardClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect });
-		const key = new SensorValue({ dashboard, dataApi: new DataApi({ getBaseUrl: () => "http://s", fetch: f.fetch, connect: c.connect }) });
+		const studio = new StudioClient({ getBaseUrl: () => "http://d", fetch: f.fetch, connect: c.connect });
+		const key = new SensorValue({ studio, dataApi: new DataApi({ getBaseUrl: () => "http://s", fetch: f.fetch, connect: c.connect }) });
 		const a = keyAction();
 		a.getSettings.mockResolvedValue({ sensorFilter: "spot" } as never);
 		await key.onSendToPlugin({ action: a, payload: { event: "getSensors" } } as never);
