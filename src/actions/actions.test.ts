@@ -217,7 +217,7 @@ describe("go to page", () => {
 });
 
 describe("next / previous page", () => {
-	it("posts next and prev and shows the current page name", async () => {
+	it("posts next and prev and shows the page each one goes to", async () => {
 		const t = await onlineDeps();
 		t.goOnline();
 		const next = new NextPage(t.deps);
@@ -230,7 +230,27 @@ describe("next / previous page", () => {
 			{ path: "page", body: { profile: "main", page: "prev" } },
 		]);
 		appear({ action: a, settings: {} }, next);
-		expect(decode(a.setImage.mock.calls[0]!)).toContain(">Gaming</text>");
+		expect(decode(a.setImage.mock.calls[0]!)).toContain(">Music</text>");
+		const b = keyAction("k2");
+		appear({ action: b, settings: {} }, prev);
+		expect(decode(b.setImage.mock.calls[0]!)).toContain(">Overview</text>");
+	});
+
+	it("wraps the names at either end and follows page changes", async () => {
+		const t = await onlineDeps(control({ profiles: { main: { page: "p3", rotating: false, override: null }, solo: { page: "s1", rotating: false, override: null } } }));
+		t.goOnline();
+		const next = new NextPage(t.deps);
+		const prev = new PrevPage(t.deps);
+		const a = keyAction();
+		const b = keyAction("k2");
+		appear({ action: a, settings: {} }, next);
+		appear({ action: b, settings: {} }, prev);
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(">Overview</text>");
+		expect(decode(b.setImage.mock.calls.at(-1)!)).toContain(">Gaming</text>");
+		t.studio.control = control({ profiles: { main: { page: "p1", rotating: false, override: null }, solo: { page: "s1", rotating: false, override: null } } });
+		(t.studio as unknown as { notify: () => void }).notify();
+		expect(decode(a.setImage.mock.calls.at(-1)!)).toContain(">Gaming</text>");
+		expect(decode(b.setImage.mock.calls.at(-1)!)).toContain(">Music</text>");
 	});
 
 	it("alerts when offline or when the server refuses", async () => {

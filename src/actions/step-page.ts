@@ -1,6 +1,7 @@
 import { action, type KeyDownEvent } from "@elgato/streamdeck";
 import type { ThemeTokens } from "../studio";
 import { navKey } from "../render/keys";
+import { stepTarget } from "../render/strip";
 import { StudioKey, type ProfileSettings } from "./studio-key";
 
 interface Input {
@@ -8,13 +9,16 @@ interface Input {
 	pageName: string;
 }
 
-/** Next / previous page of a profile (wrapping); the face shows the page the profile is on. */
+/** Next / previous page of a profile (wrapping); the face shows the page a press goes to. */
 abstract class StepPage extends StudioKey<ProfileSettings, Input> {
 	protected abstract readonly direction: "next" | "prev";
 
 	protected input(_settings: ProfileSettings, profile: string | null): Input {
 		const { studio } = this.deps;
-		return { theme: studio.effectiveTheme(profile), pageName: studio.pageOf(profile)?.name ?? "" };
+		const pages = studio.pagesOf(profile);
+		// Same step as the server's `next` / `prev`, so the face names the page a press lands on.
+		const target = stepTarget(pages.map((p) => p.id), studio.pageOf(profile)?.id, this.direction === "next" ? 1 : -1);
+		return { theme: studio.effectiveTheme(profile), pageName: pages.find((p) => p.id === target)?.name ?? "" };
 	}
 
 	protected render(input: Input): string {
